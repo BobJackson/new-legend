@@ -1,0 +1,6 @@
+{
+  "name": "热血传奇",
+  "description": "经典复古2.5D传奇ARPG网页游戏，支持战法道三职业，技能打怪爆装、强化升级、神兽坐骑、沙巴克决战，全端响应式移动端/Web端兼容。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
