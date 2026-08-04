@@ -88,6 +88,8 @@ export interface Monster {
   atkCooldownMs: number;
   drops: { itemId: string; chance: number; countMin?: number; countMax?: number }[];
   iconSymbol: string;
+  templateId?: string;
+  lastMoveSoundTime?: number;
 }
 
 export interface DropItem {
@@ -102,6 +104,24 @@ export interface DropItem {
   dropTime: number;
 }
 
+export type VfxKind = 
+  | 'slash'
+  | 'fire_sword'
+  | 'crescent'
+  | 'thunder'
+  | 'ice_storm'
+  | 'poison'
+  | 'heal_beam'
+  | 'talisman'
+  | 'shield'
+  | 'claw'
+  | 'boss_smash'
+  | 'death'
+  | 'spark_burst'
+  | 'hit_warrior'
+  | 'hit_mage'
+  | 'hit_taoist';
+
 export interface ParticleEffect {
   id: string;
   x: number;
@@ -113,6 +133,14 @@ export interface ParticleEffect {
   text?: string;
   combatCategory?: 'normal' | 'crit' | 'block' | 'heal' | 'info';
   offsetRandomX?: number;
+  vfxKind?: VfxKind;
+  profession?: 'warrior' | 'mage' | 'taoist';
+  targetX?: number;
+  targetY?: number;
+  startX?: number;
+  startY?: number;
+  radius?: number;
+  angle?: number;
 }
 
 export interface MapPortal {
@@ -122,6 +150,29 @@ export interface MapPortal {
   targetX: number;
   targetY: number;
   label: string;
+}
+
+export interface MapObstacle {
+  id: string;
+  x: number;
+  y: number;
+  width?: number; // width in grid tiles (default 1)
+  height?: number; // height in grid tiles (default 1)
+  type: 'tree' | 'rock' | 'wall' | 'statue' | 'pillar' | 'water' | 'ruins' | 'crystal';
+  label?: string;
+}
+
+export interface GuildFlagPole {
+  x: number;
+  y: number;
+  label: string;
+  isMainFlag?: boolean;
+}
+
+export interface GuildTerritory {
+  name: string;
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  flagPoles: GuildFlagPole[];
 }
 
 export interface MapScene {
@@ -135,8 +186,10 @@ export interface MapScene {
   gridColor: string;
   monsters: { monsterTemplateId: string; count: number }[];
   portals: MapPortal[];
+  obstacles?: MapObstacle[];
   isSafeZone?: boolean;
   bossSpawns?: { monsterTemplateId: string; respawnTimeSec: number; x: number; y: number }[];
+  guildTerritory?: GuildTerritory;
 }
 
 export interface PlayerStats {

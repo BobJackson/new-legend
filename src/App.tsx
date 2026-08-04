@@ -23,6 +23,8 @@ import { SettingsModal } from './components/Modals/SettingsModal';
 import { AutoSettingsModal } from './components/Modals/AutoSettingsModal';
 import { WeatherModal } from './components/Modals/WeatherModal';
 import { MountModal } from './components/Modals/MountModal';
+import { PortalModal } from './components/Modals/PortalModal';
+import { PortalPrompt } from './components/HUD/PortalPrompt';
 
 export default function App() {
   const [characterData, setCharacterData] = useState<CharacterData | null>(null);
@@ -89,17 +91,13 @@ export default function App() {
     const item = engine.character.equipment[slot];
     if (!item) return;
 
-    const emptyIdx = engine.character.inventory.findIndex(s => s === null);
-    if (emptyIdx < 0) {
-      engine.addParticle(engine.character.x, engine.character.y, 'text_info', '背包已满，无法卸下！');
-      return;
+    const added = engine.addItemToInventory(item);
+    if (added) {
+      engine.character.equipment[slot] = null;
+      engine.recalculateStats();
+      engine.addParticle(engine.character.x, engine.character.y, 'text_info', `卸下 [${item.name}]`);
+      saveCharacter(engine.character);
     }
-
-    engine.character.inventory[emptyIdx] = item;
-    engine.character.equipment[slot] = null;
-    engine.recalculateStats();
-    engine.addParticle(engine.character.x, engine.character.y, 'text_info', `卸下 [${item.name}]`);
-    saveCharacter(engine.character);
   };
 
   if (!engine || !characterData) {
@@ -130,8 +128,9 @@ export default function App() {
           onOpenWeatherModal={() => setActiveModal('weather')}
         />
         <QuestTracker engine={engine} />
-        <MiniMap engine={engine} />
+        <MiniMap engine={engine} onOpenPortalModal={() => setActiveModal('portal')} />
         <Joystick engine={engine} />
+        <PortalPrompt engine={engine} onOpenPortalModal={() => setActiveModal('portal')} />
       </div>
 
       {/* Bottom HUD */}
@@ -227,6 +226,13 @@ export default function App() {
 
       {activeModal === 'mount' && (
         <MountModal
+          engine={engine}
+          onClose={() => setActiveModal(null)}
+        />
+      )}
+
+      {activeModal === 'portal' && (
+        <PortalModal
           engine={engine}
           onClose={() => setActiveModal(null)}
         />

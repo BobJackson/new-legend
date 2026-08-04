@@ -5,6 +5,7 @@ import { MAP_DATABASE } from '../data/maps';
 import { WEATHER_DATABASE, WeatherType } from '../data/weather';
 import { soundFX } from '../utils/sound';
 import { ComboOverlay } from './HUD/ComboOverlay';
+import { drawCharacterAvatar } from '../utils/characterRenderer';
 
 interface CanvasRendererProps {
   engine: GameEngine;
@@ -36,6 +37,8 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
   // Dynamic Mount Displacement Tracking & Motion Trail Ref
   const mountPosRef = useRef<{ x: number; y: number; vx: number; vy: number; angle: number } | null>(null);
   const mountTrailRef = useRef<{ x: number; y: number; alpha: number; tier: number; angle: number; time: number }[]>([]);
+  const wasInsideTerritoryRef = useRef<boolean>(false);
+  const cameraPosRef = useRef<{ x: number; y: number } | null>(null);
 
   const initWeatherParticles = (type: WeatherType, width: number, height: number) => {
     const particles: CanvasWeatherParticle[] = [];
@@ -116,23 +119,52 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
       const tileWidth = 60;
       const tileHeight = 30;
 
-      // Center view on player
+      // Center view on player with smooth camera damping
       const playerX = engine.character.x;
       const playerY = engine.character.y;
 
-      const screenCenterX = width / 2;
-      const screenCenterY = height / 2;
+      if (!cameraPosRef.current) {
+        cameraPosRef.current = { x: playerX, y: playerY };
+      } else {
+        // Exponential smoothing for butter-smooth camera following
+        const dx = playerX - cameraPosRef.current.x;
+        const dy = playerY - cameraPosRef.current.y;
+        if (Math.hypot(dx, dy) > 25) { // Reset instantly on teleport/map change
+          cameraPosRef.current = { x: playerX, y: playerY };
+        } else {
+          cameraPosRef.current.x += dx * 0.15;
+          cameraPosRef.current.y += dy * 0.15;
+        }
+      }
+      const camX = cameraPosRef.current.x;
+      const camY = cameraPosRef.current.y;
+
+      // Dynamic Camera Screen Shake on heavy combat impacts
+      let shakeX = 0;
+      let shakeY = 0;
+      const heavyPart = engine.particles.find(p => p.vfxKind === 'boss_smash' || p.vfxKind === 'thunder' || p.vfxKind === 'spark_burst' || p.combatCategory === 'crit');
+      if (heavyPart) {
+        const elapsed = now - heavyPart.startTime;
+        if (elapsed < 320) {
+          const intensity = (1 - elapsed / 320) * (heavyPart.vfxKind === 'boss_smash' ? 12 : 6);
+          shakeX = (Math.random() - 0.5) * intensity;
+          shakeY = (Math.random() - 0.5) * intensity;
+        }
+      }
+
+      const screenCenterX = width / 2 + shakeX;
+      const screenCenterY = height / 2 + shakeY;
 
       // Coordinate converter: grid (x, y) to screen canvas (sx, sy)
       const toScreen = (gx: number, gy: number) => {
         const isoX = (gx - gy) * (tileWidth / 2);
         const isoY = (gx + gy) * (tileHeight / 2);
-        const playerIsoX = (playerX - playerY) * (tileWidth / 2);
-        const playerIsoY = (playerX + playerY) * (tileHeight / 2);
+        const camIsoX = (camX - camY) * (tileWidth / 2);
+        const camIsoY = (camX + camY) * (tileHeight / 2);
 
         return {
-          sx: screenCenterX + (isoX - playerIsoX),
-          sy: screenCenterY + (isoY - playerIsoY)
+          sx: screenCenterX + (isoX - camIsoX),
+          sy: screenCenterY + (isoY - camIsoY)
         };
       };
 
@@ -167,24 +199,611 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         }
       }
 
-      // 3. Draw Portals
+      // 2.5 Draw Guild Territory Ground Highlights, Imperial Magic Seal & Perimeter Laser Fence
+      if (map.guildTerritory) {
+        const terr = map.guildTerritory;
+        const sabakGuild = engine.sabakInfo?.guildName || '兄弟会';
+        const sabakLeader = engine.sabakInfo?.leaderName || '霸天战神';
+
+        // A. Floor Tile Territory Shading
+        for (let gx = terr.bounds.minX; gx <= terr.bounds.maxX; gx++) {
+          for (let gy = terr.bounds.minY; gy <= terr.bounds.maxY; gy++) {
+            const { sx, sy } = toScreen(gx, gy);
+            if (sx < -100 || sx > width + 100 || sy < -100 || sy > height + 100) continue;
+
+            ctx.beginPath();
+            ctx.moveTo(sx, sy - tileHeight / 2);
+            ctx.lineTo(sx + tileWidth / 2, sy);
+            ctx.lineTo(sx, sy + tileHeight / 2);
+            ctx.lineTo(sx - tileWidth / 2, sy);
+            ctx.closePath();
+
+            const isAlt = (gx + gy) % 2 === 0;
+            ctx.fillStyle = isAlt ? 'rgba(245, 158, 11, 0.12)' : 'rgba(220, 38, 38, 0.08)';
+            ctx.fill();
+          }
+        }
+
+        // B. Central Imperial Magic Crest / Seal on Floor
+        const centerX = Math.floor((terr.bounds.minX + terr.bounds.maxX) / 2);
+        const centerY = Math.floor((terr.bounds.minY + terr.bounds.maxY) / 2);
+        const { sx: csx, sy: csy } = toScreen(centerX, centerY);
+
+        if (csx >= -200 && csx <= width + 200 && csy >= -200 && csy <= height + 200) {
+          ctx.save();
+
+          const sealRadius = tileWidth * 3.2;
+          const sealGrad = ctx.createRadialGradient(csx, csy, 5, csx, csy, sealRadius);
+          sealGrad.addColorStop(0, 'rgba(245, 158, 11, 0.35)');
+          sealGrad.addColorStop(0.6, 'rgba(180, 83, 9, 0.2)');
+          sealGrad.addColorStop(1, 'rgba(120, 53, 15, 0)');
+
+          ctx.beginPath();
+          ctx.ellipse(csx, csy, sealRadius, sealRadius * 0.5, 0, 0, Math.PI * 2);
+          ctx.fillStyle = sealGrad;
+          ctx.fill();
+
+          const rotAngle = (now * 0.0008) % (Math.PI * 2);
+          ctx.save();
+          ctx.translate(csx, csy);
+          ctx.scale(1, 0.5);
+          ctx.rotate(rotAngle);
+
+          ctx.beginPath();
+          ctx.arc(0, 0, sealRadius * 0.75, 0, Math.PI * 2);
+          ctx.strokeStyle = '#fef08a';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([12, 8]);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, sealRadius * 0.5, 0, Math.PI * 2);
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([6, 6]);
+          ctx.stroke();
+          ctx.restore();
+
+          ctx.font = 'bold 15px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#fef08a';
+          ctx.shadowColor = '#d97706';
+          ctx.shadowBlur = 10;
+          ctx.fillText(`👑 【${sabakGuild}】沙城霸主专属领地`, csx, csy - 10);
+
+          ctx.font = 'bold 11px sans-serif';
+          ctx.fillStyle = '#fde047';
+          ctx.fillText(`城主大天尊: ${sabakLeader} · 奉天承运 独霸天下`, csx, csy + 12);
+
+          ctx.restore();
+        }
+
+        // C. Perimeter Boundary Laser Lines (行会领地范围标记)
+        const { minX, minY, maxX, maxY } = terr.bounds;
+        ctx.save();
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#fbbf24';
+        ctx.shadowBlur = 12;
+
+        const edgeSegments = [
+          { start: { x: minX, y: minY }, end: { x: maxX, y: minY } },
+          { start: { x: maxX, y: minY }, end: { x: maxX, y: maxY } },
+          { start: { x: maxX, y: maxY }, end: { x: minX, y: maxY } },
+          { start: { x: minX, y: maxY }, end: { x: minX, y: minY } },
+        ];
+
+        edgeSegments.forEach(seg => {
+          const p1 = toScreen(seg.start.x, seg.start.y);
+          const p2 = toScreen(seg.end.x, seg.end.y);
+
+          ctx.beginPath();
+          ctx.moveTo(p1.sx, p1.sy);
+          ctx.lineTo(p2.sx, p2.sy);
+          ctx.stroke();
+
+          const steps = 6;
+          for (let i = 0; i <= steps; i++) {
+            const t = (i / steps + (now * 0.0003)) % 1;
+            const nx = p1.sx + (p2.sx - p1.sx) * t;
+            const ny = p1.sy + (p2.sy - p1.sy) * t;
+
+            ctx.beginPath();
+            ctx.arc(nx, ny, 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#fef08a';
+            ctx.fill();
+          }
+        });
+        ctx.restore();
+
+        // D. Corner Stone Posts (领地界碑)
+        const cornerCoords = [
+          { x: minX, y: minY, label: '西北霸主界碑' },
+          { x: maxX, y: minY, label: '东北霸主界碑' },
+          { x: maxX, y: maxY, label: '东南霸主界碑' },
+          { x: minX, y: maxY, label: '西南霸主界碑' },
+        ];
+
+        cornerCoords.forEach(c => {
+          const { sx, sy } = toScreen(c.x, c.y);
+          if (sx < -100 || sx > width + 100 || sy < -100 || sy > height + 100) return;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.ellipse(sx, sy + 2, 16, 8, 0, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(0,0,0,0.4)';
+          ctx.fill();
+
+          const colGrad = ctx.createLinearGradient(sx - 8, 0, sx + 8, 0);
+          colGrad.addColorStop(0, '#78350f');
+          colGrad.addColorStop(0.5, '#b45309');
+          colGrad.addColorStop(1, '#451a03');
+
+          ctx.fillStyle = colGrad;
+          ctx.fillRect(sx - 7, sy - 35, 14, 35);
+          ctx.strokeStyle = '#fef08a';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(sx - 7, sy - 35, 14, 35);
+
+          const orbPulse = Math.sin(now * 0.005) * 2;
+          ctx.beginPath();
+          ctx.arc(sx, sy - 42, Math.max(0, 6 + orbPulse * 0.5), 0, Math.PI * 2);
+          ctx.fillStyle = '#ef4444';
+          ctx.shadowColor = '#f43f5e';
+          ctx.shadowBlur = 12;
+          ctx.fill();
+
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#fde047';
+          ctx.fillText('【界碑】', sx, sy - 52);
+
+          ctx.restore();
+        });
+      }
+
+      // 3. Draw Portals & Teleport Arrays
       map.portals.forEach(portal => {
         const { sx, sy } = toScreen(portal.x, portal.y);
+        if (sx < -100 || sx > width + 100 || sy < -100 || sy > height + 100) return;
+
+        const distToPlayer = Math.hypot(portal.x - playerX, portal.y - playerY);
+        const isNearby = distToPlayer <= 3.5;
+
         ctx.save();
+
+        // 3.1 Light Beam Rising Up
+        const beamH = isNearby ? 90 : 60;
+        const beamGrad = ctx.createLinearGradient(sx, sy, sx, sy - beamH);
+        beamGrad.addColorStop(0, isNearby ? 'rgba(59, 130, 246, 0.45)' : 'rgba(99, 102, 241, 0.25)');
+        beamGrad.addColorStop(0.5, isNearby ? 'rgba(147, 197, 253, 0.3)' : 'rgba(165, 180, 252, 0.15)');
+        beamGrad.addColorStop(1, 'rgba(59, 130, 246, 0)');
+
         ctx.beginPath();
-        ctx.ellipse(sx, sy, tileWidth / 2, tileHeight / 2, 0, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.35)';
+        ctx.moveTo(sx - tileWidth / 2.2, sy);
+        ctx.lineTo(sx - tileWidth / 4, sy - beamH);
+        ctx.lineTo(sx + tileWidth / 4, sy - beamH);
+        ctx.lineTo(sx + tileWidth / 2.2, sy);
+        ctx.closePath();
+        ctx.fillStyle = beamGrad;
         ctx.fill();
-        ctx.strokeStyle = '#60a5fa';
-        ctx.lineWidth = 2;
+
+        // 3.2 Outer Magic Disc Base
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, tileWidth / 1.8, tileHeight / 1.8, 0, 0, Math.PI * 2);
+        ctx.fillStyle = isNearby ? 'rgba(37, 99, 235, 0.45)' : 'rgba(30, 58, 138, 0.3)';
+        ctx.fill();
+        ctx.strokeStyle = isNearby ? '#60a5fa' : '#3b82f6';
+        ctx.lineWidth = isNearby ? 2.5 : 1.5;
         ctx.stroke();
 
+        // 3.3 Rotating Magic Runes
+        const angle = (now * 0.0015 + portal.x * 3) % (Math.PI * 2);
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.scale(1, tileHeight / tileWidth);
+        ctx.rotate(angle);
+
+        ctx.beginPath();
+        ctx.arc(0, 0, tileWidth * 0.4, 0, Math.PI * 2);
+        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = isNearby ? '#93c5fd' : '#60a5fa';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+
+        // 3.4 Proximity Pulse Wave
+        if (isNearby) {
+          const pulseR = ((now % 1000) / 1000) * (tileWidth * 0.7);
+          const pulseAlpha = 1 - (now % 1000) / 1000;
+          ctx.beginPath();
+          ctx.ellipse(sx, sy, pulseR, pulseR * (tileHeight / tileWidth), 0, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(147, 197, 253, ${pulseAlpha * 0.8})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+
+        // 3.5 Portal Title Label
+        const labelY = sy - beamH / 2 - 15;
         ctx.font = 'bold 12px sans-serif';
-        ctx.fillStyle = '#93c5fd';
         ctx.textAlign = 'center';
-        ctx.fillText(`🌀 ${portal.label}`, sx, sy - 15);
+
+        // Background tag pill
+        const textWidth = ctx.measureText(`🌀 ${portal.label}`).width;
+        ctx.fillStyle = isNearby ? 'rgba(15, 23, 42, 0.9)' : 'rgba(15, 23, 42, 0.75)';
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === 'function') {
+          (ctx as any).roundRect(sx - textWidth / 2 - 8, labelY - 14, textWidth + 16, 22, 6);
+        } else {
+          ctx.rect(sx - textWidth / 2 - 8, labelY - 14, textWidth + 16, 22);
+        }
+        ctx.fill();
+        ctx.strokeStyle = isNearby ? '#60a5fa' : '#3b82f6';
+        ctx.lineWidth = isNearby ? 1.5 : 1;
+        ctx.stroke();
+
+        ctx.fillStyle = isNearby ? '#fbbf24' : '#93c5fd';
+        ctx.fillText(`🌀 ${portal.label}`, sx, labelY);
+
+        if (isNearby) {
+          ctx.font = 'bold 10px sans-serif';
+          ctx.fillStyle = '#6ee7b7';
+          ctx.fillText('⚡ [点击或靠近 立即传送]', sx, labelY + 14);
+        }
+
         ctx.restore();
       });
+
+      // 3.5 Draw Map Obstacles
+      if (map.obstacles && map.obstacles.length > 0) {
+        map.obstacles.forEach(obs => {
+          const { sx, sy } = toScreen(obs.x + (obs.width || 1) / 2 - 0.5, obs.y + (obs.height || 1) / 2 - 0.5);
+
+          // Skip if way off screen
+          if (sx < -150 || sx > width + 150 || sy < -150 || sy > height + 150) return;
+
+          ctx.save();
+
+          if (obs.type === 'tree') {
+            // Shadow
+            ctx.beginPath();
+            ctx.ellipse(sx, sy, 24, 12, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.35)';
+            ctx.fill();
+
+            // Trunk
+            const trunkGrad = ctx.createLinearGradient(sx - 6, 0, sx + 6, 0);
+            trunkGrad.addColorStop(0, '#451a03');
+            trunkGrad.addColorStop(0.5, '#78350f');
+            trunkGrad.addColorStop(1, '#27272a');
+            ctx.fillStyle = trunkGrad;
+            ctx.beginPath();
+            ctx.moveTo(sx - 5, sy);
+            ctx.lineTo(sx - 3, sy - 35);
+            ctx.lineTo(sx + 3, sy - 35);
+            ctx.lineTo(sx + 5, sy);
+            ctx.closePath();
+            ctx.fill();
+
+            // Leaf Canopy
+            const sway = Math.sin(now * 0.002 + obs.x) * 2;
+            const treeTopY = sy - 35;
+
+            ctx.beginPath();
+            ctx.arc(sx + sway, treeTopY - 10, 24, 0, Math.PI * 2);
+            ctx.fillStyle = map.theme === 'snake_valley' ? '#047857' : '#15803d';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(sx - 6 + sway, treeTopY - 20, 18, 0, Math.PI * 2);
+            ctx.fillStyle = map.theme === 'snake_valley' ? '#10b981' : '#22c55e';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(sx + 4 + sway, treeTopY - 28, 12, 0, Math.PI * 2);
+            ctx.fillStyle = '#86efac';
+            ctx.fill();
+
+          } else if (obs.type === 'rock') {
+            // Shadow
+            ctx.beginPath();
+            ctx.ellipse(sx, sy, 22, 11, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.fill();
+
+            // Rock facets
+            ctx.beginPath();
+            ctx.moveTo(sx - 18, sy);
+            ctx.lineTo(sx - 10, sy - 20);
+            ctx.lineTo(sx + 6, sy - 24);
+            ctx.lineTo(sx + 18, sy - 10);
+            ctx.lineTo(sx + 14, sy + 2);
+            ctx.lineTo(sx - 12, sy + 4);
+            ctx.closePath();
+
+            const rockGrad = ctx.createLinearGradient(sx - 18, sy - 24, sx + 18, sy + 4);
+            rockGrad.addColorStop(0, '#64748b');
+            rockGrad.addColorStop(0.6, '#334155');
+            rockGrad.addColorStop(1, '#1e293b');
+            ctx.fillStyle = rockGrad;
+            ctx.fill();
+            ctx.strokeStyle = '#94a3b8';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Moss / detail
+            ctx.beginPath();
+            ctx.arc(sx - 2, sy - 14, 6, 0, Math.PI * 2);
+            ctx.fillStyle = map.theme === 'snake_valley' ? '#059669' : '#475569';
+            ctx.fill();
+
+          } else if (obs.type === 'wall') {
+            const wWidth = 32 * (obs.width || 1);
+            const wHeight = 28;
+
+            ctx.beginPath();
+            ctx.rect(sx - wWidth / 2, sy - wHeight, wWidth, wHeight);
+            const wallGrad = ctx.createLinearGradient(sx - wWidth / 2, 0, sx + wWidth / 2, 0);
+            wallGrad.addColorStop(0, '#334155');
+            wallGrad.addColorStop(0.5, '#475569');
+            wallGrad.addColorStop(1, '#1e293b');
+            ctx.fillStyle = wallGrad;
+            ctx.fill();
+            ctx.strokeStyle = '#a1a1aa';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            ctx.fillStyle = '#64748b';
+            ctx.fillRect(sx - wWidth / 2, sy - wHeight - 4, wWidth, 4);
+
+          } else if (obs.type === 'pillar') {
+            ctx.beginPath();
+            ctx.ellipse(sx, sy, 16, 8, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            ctx.fill();
+
+            const pGrad = ctx.createLinearGradient(sx - 10, 0, sx + 10, 0);
+            pGrad.addColorStop(0, '#52525b');
+            pGrad.addColorStop(0.3, '#a1a1aa');
+            pGrad.addColorStop(0.8, '#d4d4d8');
+            pGrad.addColorStop(1, '#3f3f46');
+
+            ctx.fillStyle = pGrad;
+            ctx.fillRect(sx - 10, sy - 44, 20, 44);
+
+            ctx.fillStyle = '#f59e0b';
+            ctx.fillRect(sx - 13, sy - 48, 26, 6);
+            ctx.fillRect(sx - 12, sy - 4, 24, 4);
+
+          } else if (obs.type === 'statue') {
+            ctx.beginPath();
+            ctx.ellipse(sx, sy, 20, 10, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fill();
+
+            ctx.fillStyle = '#3f3f46';
+            ctx.fillRect(sx - 14, sy - 12, 28, 12);
+            ctx.strokeStyle = '#d4d4d8';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(sx - 14, sy - 12, 28, 12);
+
+            ctx.fillStyle = '#71717a';
+            ctx.beginPath();
+            ctx.arc(sx, sy - 26, 12, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#fbbf24';
+            ctx.beginPath();
+            ctx.arc(sx - 3, sy - 28, 2, 0, Math.PI * 2);
+            ctx.arc(sx + 3, sy - 28, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+          } else if (obs.type === 'crystal') {
+            ctx.beginPath();
+            ctx.ellipse(sx, sy, 20, 10, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(185, 28, 28, 0.4)';
+            ctx.fill();
+
+            for (let i = -2; i <= 2; i++) {
+              const spikeH = 26 + Math.abs(i) * -4;
+              const spikeX = sx + i * 7;
+              ctx.beginPath();
+              ctx.moveTo(spikeX - 4, sy);
+              ctx.lineTo(spikeX, sy - spikeH);
+              ctx.lineTo(spikeX + 4, sy);
+              ctx.closePath();
+
+              const cGrad = ctx.createLinearGradient(spikeX - 4, 0, spikeX + 4, 0);
+              cGrad.addColorStop(0, '#991b1b');
+              cGrad.addColorStop(0.5, '#ef4444');
+              cGrad.addColorStop(1, '#fca5a5');
+              ctx.fillStyle = cGrad;
+              ctx.fill();
+            }
+
+          } else if (obs.type === 'ruins') {
+            ctx.beginPath();
+            ctx.ellipse(sx, sy, 22, 12, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.fill();
+
+            ctx.fillStyle = '#27272a';
+            ctx.fillRect(sx - 18, sy - 16, 36, 16);
+            ctx.strokeStyle = '#71717a';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(sx - 18, sy - 16, 36, 16);
+
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('💀', sx, sy - 4);
+          }
+
+          if (obs.label) {
+            ctx.font = '10px sans-serif';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+            ctx.textAlign = 'center';
+            ctx.fillText(obs.label, sx, sy + 14);
+          }
+
+          ctx.restore();
+        });
+      }
+
+      // 3.6 Draw Occupying Guild Flags (占领行会旗帜)
+      if (map.guildTerritory && map.guildTerritory.flagPoles) {
+        const sabakGuild = engine.sabakInfo?.guildName || '兄弟会';
+
+        map.guildTerritory.flagPoles.forEach(fp => {
+          const { sx, sy } = toScreen(fp.x, fp.y);
+          if (sx < -120 || sx > width + 120 || sy < -120 || sy > height + 120) return;
+
+          const distToPlayer = Math.hypot(fp.x - playerX, fp.y - playerY);
+          const isClose = distToPlayer <= 4;
+          const isMain = fp.isMainFlag;
+
+          ctx.save();
+
+          // A. Ground Shadow & Base Pedestal
+          ctx.beginPath();
+          ctx.ellipse(sx, sy + 3, isMain ? 24 : 18, isMain ? 12 : 9, 0, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(0,0,0,0.45)';
+          ctx.fill();
+
+          const baseW = isMain ? 22 : 16;
+          const baseH = isMain ? 14 : 10;
+          const pGrad = ctx.createLinearGradient(sx - baseW / 2, 0, sx + baseW / 2, 0);
+          pGrad.addColorStop(0, '#78350f');
+          pGrad.addColorStop(0.5, '#f59e0b');
+          pGrad.addColorStop(1, '#451a03');
+
+          ctx.fillStyle = pGrad;
+          ctx.fillRect(sx - baseW / 2, sy - baseH, baseW, baseH);
+          ctx.strokeStyle = '#fef08a';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(sx - baseW / 2, sy - baseH, baseW, baseH);
+
+          // B. Metallic Flag Pole
+          const poleH = isMain ? 110 : 85;
+          const poleY = sy - baseH;
+          const topY = poleY - poleH;
+
+          const poleGrad = ctx.createLinearGradient(sx - 3, 0, sx + 3, 0);
+          poleGrad.addColorStop(0, '#d97706');
+          poleGrad.addColorStop(0.5, '#fef08a');
+          poleGrad.addColorStop(1, '#78350f');
+
+          ctx.fillStyle = poleGrad;
+          ctx.fillRect(sx - 2.5, topY, 5, poleH);
+
+          // Spearhead / Trident Top Ornament
+          ctx.beginPath();
+          ctx.moveTo(sx, topY - 14);
+          ctx.lineTo(sx - 6, topY);
+          ctx.lineTo(sx + 6, topY);
+          ctx.closePath();
+          ctx.fillStyle = '#fef08a';
+          ctx.shadowColor = '#f59e0b';
+          ctx.shadowBlur = 10;
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(sx, topY - 3, 4, 0, Math.PI * 2);
+          ctx.fillStyle = '#ef4444';
+          ctx.fill();
+
+          // C. Dynamic Waving Banner Cloth
+          const bannerW = isMain ? 58 : 42;
+          const bannerH = isMain ? 40 : 30;
+          const bannerTopY = topY + 6;
+
+          const wave1 = Math.sin(now * 0.0035 + fp.x * 2) * 8;
+          const wave2 = Math.cos(now * 0.0045 + fp.y * 2) * 6;
+
+          ctx.beginPath();
+          ctx.moveTo(sx, bannerTopY);
+          ctx.quadraticCurveTo(sx + bannerW * 0.5, bannerTopY + wave1, sx + bannerW, bannerTopY + wave2 * 0.5);
+          ctx.lineTo(sx + bannerW, bannerTopY + bannerH + wave2 * 0.5);
+          ctx.quadraticCurveTo(sx + bannerW * 0.5, bannerTopY + bannerH + wave1, sx, bannerTopY + bannerH);
+          ctx.closePath();
+
+          const clothGrad = ctx.createLinearGradient(sx, bannerTopY, sx + bannerW, bannerTopY + bannerH);
+          clothGrad.addColorStop(0, '#dc2626');
+          clothGrad.addColorStop(0.6, '#991b1b');
+          clothGrad.addColorStop(1, '#7f1d1d');
+
+          ctx.fillStyle = clothGrad;
+          ctx.shadowColor = '#f43f5e';
+          ctx.shadowBlur = isMain ? 15 : 8;
+          ctx.fill();
+
+          ctx.strokeStyle = '#fef08a';
+          ctx.lineWidth = 1.8;
+          ctx.stroke();
+
+          // Tassels / Fringe along bottom edge
+          ctx.beginPath();
+          for (let tx = 0; tx <= bannerW; tx += 6) {
+            const ty = bannerTopY + bannerH + Math.sin(now * 0.0035 + (sx + tx) * 0.1) * 4;
+            ctx.moveTo(sx + tx, ty);
+            ctx.lineTo(sx + tx, ty + 6);
+          }
+          ctx.strokeStyle = '#fde047';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          // D. Calligraphy Text on Flag Cloth
+          ctx.font = isMain ? 'bold 12px sans-serif' : 'bold 10px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#fef08a';
+          ctx.shadowColor = '#000000';
+          ctx.shadowBlur = 4;
+
+          const labelX = sx + bannerW * 0.5 + wave1 * 0.3;
+          const labelY = bannerTopY + bannerH * 0.5;
+
+          ctx.fillText(sabakGuild, labelX, labelY);
+
+          // E. Floating Flag Title Badge
+          const tagY = topY - 26;
+          ctx.font = 'bold 11px sans-serif';
+          const tagText = isMain ? `👑 霸主主旗: 《${sabakGuild}》` : `🚩 ${fp.label}`;
+          const tw = ctx.measureText(tagText).width;
+
+          ctx.beginPath();
+          if (typeof (ctx as any).roundRect === 'function') {
+            (ctx as any).roundRect(sx - tw / 2 - 8, tagY - 12, tw + 16, 20, 5);
+          } else {
+            ctx.rect(sx - tw / 2 - 8, tagY - 12, tw + 16, 20);
+          }
+          ctx.fillStyle = isClose ? 'rgba(120, 53, 15, 0.95)' : 'rgba(15, 23, 42, 0.85)';
+          ctx.fill();
+          ctx.strokeStyle = isClose ? '#fef08a' : '#f59e0b';
+          ctx.lineWidth = isClose ? 2 : 1;
+          ctx.stroke();
+
+          ctx.fillStyle = isClose ? '#ffffff' : '#fde047';
+          ctx.fillText(tagText, sx, tagY);
+
+          // F. Proximity Victory Sparkles
+          if (isClose) {
+            for (let s = 0; s < 4; s++) {
+              const spTime = (now * 0.002 + s * 1.5) % (Math.PI * 2);
+              const spX = sx + Math.cos(spTime) * 20;
+              const spY = topY + Math.sin(spTime * 2) * 15;
+
+              ctx.beginPath();
+              ctx.arc(spX, spY, 2.5, 0, Math.PI * 2);
+              ctx.fillStyle = '#fef08a';
+              ctx.shadowColor = '#fbbf24';
+              ctx.shadowBlur = 8;
+              ctx.fill();
+            }
+          }
+
+          ctx.restore();
+        });
+      }
 
       // 4. Draw Drops on Ground & Light Beams
       engine.drops.forEach(drop => {
@@ -209,6 +828,12 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
 
         ctx.save();
 
+        // Expiring drop fade/flicker effect in final 10 seconds (50s - 60s)
+        if (elapsed > 50000) {
+          const blink = (Math.floor(now / 180) % 2 === 0) ? 0.35 : 0.9;
+          ctx.globalAlpha = blink;
+        }
+
         // Rarity colors & Beam parameters
         const rarity = drop.item.rarity;
         const isMythic = rarity === 'mythic';
@@ -232,7 +857,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
 
         // A. Draw Shadow on Floor
         ctx.beginPath();
-        const shadowRadius = Math.max(4, 14 * (1 - arcZ / 80));
+        const shadowRadius = Math.max(0, 14 * (1 - arcZ / 80));
         ctx.ellipse(groundSx, groundSy, shadowRadius, shadowRadius * 0.5, 0, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(0, 0, 0, ${Math.max(0.1, 0.5 - arcZ / 100)})`;
         ctx.fill();
@@ -241,7 +866,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         if (elapsed >= animDuration && elapsed < animDuration + 300) {
           const impactProgress = (elapsed - animDuration) / 300;
           ctx.beginPath();
-          ctx.ellipse(groundSx, groundSy, 20 * impactProgress, 10 * impactProgress, 0, 0, Math.PI * 2);
+          ctx.ellipse(groundSx, groundSy, Math.max(0, 20 * impactProgress), Math.max(0, 10 * impactProgress), 0, 0, Math.PI * 2);
           ctx.strokeStyle = mainColor;
           ctx.lineWidth = 2 * (1 - impactProgress);
           ctx.stroke();
@@ -256,7 +881,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
           const pulse = Math.sin(now / 150) * 0.15;
           ctx.save();
           ctx.beginPath();
-          ctx.ellipse(groundSx, groundSy, (tileWidth / 2.2) * (0.85 + pulse), (tileHeight / 2.2) * (0.85 + pulse), 0, 0, Math.PI * 2);
+          ctx.ellipse(groundSx, groundSy, Math.max(0, (tileWidth / 2.2) * (0.85 + pulse)), Math.max(0, (tileHeight / 2.2) * (0.85 + pulse)), 0, 0, Math.PI * 2);
           const haloGrad = ctx.createRadialGradient(groundSx, groundSy, 2, groundSx, groundSy, tileWidth / 2);
           haloGrad.addColorStop(0, glowColor);
           haloGrad.addColorStop(0.7, glowColor);
@@ -438,146 +1063,663 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         // C. Idle Floating / Breathing Animation
         const bobY = Math.sin(now * 0.004 + m.id.charCodeAt(0) % 10) * (m.isBoss ? 4 : 2.5);
 
-        // D. High-End 2D Creature Visual Sprite Renderer (废除单图例，全面升级为2D怪物与Boss具象化形态)
+        // D. High-End 2D Creature Visual Sprite Renderer
         const entityCenterY = sy - (m.isBoss ? 26 : 16) + bobY;
         const mName = m.name;
+        const typeKey = m.templateId || (
+          mName.includes('鸡') ? 'chicken' :
+          mName.includes('鹿') ? 'deer' :
+          mName.includes('猫') ? 'hook_cat' :
+          mName.includes('蛇') ? 'snake' :
+          (mName.includes('骷髅') || mName.includes('尸') || mName.includes('僵')) ? 'skeleton_warrior' :
+          (mName.includes('白野猪') || mName.includes('猪')) ? 'white_boar' :
+          mName.includes('沃玛') ? 'woma_leader' :
+          mName.includes('祖玛') ? 'zuma_leader' :
+          mName.includes('赤月') ? 'red_moon_demon' :
+          (mName.includes('卫') || mName.includes('禁卫')) ? 'sabak_guard' :
+          (mName.includes('稻草') ? 'scarecrow' : 'default')
+        );
 
         ctx.save();
 
-        if (m.isBoss) {
-          // ==================== BOSS CREATURE MODEL ====================
-          // Demonic Boss Wings / Shoulder Spikes
-          ctx.save();
-          ctx.beginPath();
-          ctx.moveTo(sx - 32, entityCenterY - 10);
-          ctx.quadraticCurveTo(sx - 48, entityCenterY - 30, sx - 20, entityCenterY - 38);
-          ctx.quadraticCurveTo(sx - 16, entityCenterY - 18, sx - 10, entityCenterY - 12);
-          ctx.moveTo(sx + 32, entityCenterY - 10);
-          ctx.quadraticCurveTo(sx + 48, entityCenterY - 30, sx + 20, entityCenterY - 38);
-          ctx.quadraticCurveTo(sx + 16, entityCenterY - 18, sx + 10, entityCenterY - 12);
-          ctx.fillStyle = '#7f1d1d';
-          ctx.shadowColor = '#dc2626';
-          ctx.shadowBlur = 15;
-          ctx.fill();
-          ctx.strokeStyle = '#f59e0b';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-          ctx.restore();
+        // Check recent attack lunge (shift monster slightly towards player when attacking)
+        let lungeX = 0;
+        let lungeY = 0;
+        if (now - m.lastAtkTime < 220) {
+          const lungeAngle = Math.atan2(engine.character.y - m.y, engine.character.x - m.x);
+          lungeX = Math.cos(lungeAngle) * 8;
+          lungeY = Math.sin(lungeAngle) * 8;
+        }
 
-          // Boss Heavy Torso & Armor Plate
-          ctx.beginPath();
-          ctx.moveTo(sx - 18, entityCenterY - 16);
-          ctx.lineTo(sx + 18, entityCenterY - 16);
-          ctx.lineTo(sx + 14, entityCenterY + 16);
-          ctx.lineTo(sx - 14, entityCenterY + 16);
-          ctx.closePath();
+        const renderX = sx + lungeX;
+        const renderY = entityCenterY + lungeY;
 
-          const bossBodyGrad = ctx.createLinearGradient(sx - 15, entityCenterY - 16, sx + 15, entityCenterY + 16);
-          bossBodyGrad.addColorStop(0, '#450a0a');
-          bossBodyGrad.addColorStop(0.5, '#7f1d1d');
-          bossBodyGrad.addColorStop(1, '#0f172a');
-          ctx.fillStyle = bossBodyGrad;
-          ctx.fill();
-          ctx.strokeStyle = '#f59e0b';
-          ctx.lineWidth = 2;
-          ctx.shadowColor = '#f59e0b';
-          ctx.shadowBlur = 10;
-          ctx.stroke();
-
-          // Boss Horned Headpiece
-          ctx.beginPath();
-          ctx.arc(sx, entityCenterY - 24, 11, 0, Math.PI * 2);
-          ctx.fillStyle = '#1e1b4b';
-          ctx.fill();
-          ctx.strokeStyle = '#ef4444';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-
-          // Crimson Glowing Boss Eyes
-          ctx.fillStyle = '#fef08a';
-          ctx.shadowColor = '#dc2626';
-          ctx.shadowBlur = 10;
-          ctx.beginPath();
-          ctx.arc(sx - 4, entityCenterY - 24, 2.5, 0, Math.PI * 2);
-          ctx.arc(sx + 4, entityCenterY - 24, 2.5, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Demonic Horns
-          ctx.beginPath();
-          ctx.moveTo(sx - 8, entityCenterY - 28);
-          ctx.quadraticCurveTo(sx - 18, entityCenterY - 42, sx - 12, entityCenterY - 44);
-          ctx.quadraticCurveTo(sx - 6, entityCenterY - 34, sx - 4, entityCenterY - 28);
-          ctx.moveTo(sx + 8, entityCenterY - 28);
-          ctx.quadraticCurveTo(sx + 18, entityCenterY - 42, sx + 12, entityCenterY - 44);
-          ctx.quadraticCurveTo(sx + 6, entityCenterY - 34, sx + 4, entityCenterY - 28);
-          ctx.fillStyle = '#f59e0b';
-          ctx.shadowColor = '#ea580c';
-          ctx.shadowBlur = 12;
-          ctx.fill();
-
-          // Giant Boss Flame Cleaver / Mace Weapon
-          ctx.save();
-          ctx.translate(sx + 24, entityCenterY - 4);
-          ctx.rotate(0.35);
-          ctx.fillStyle = '#dc2626';
-          ctx.fillRect(-3, -28, 7, 30);
-          ctx.fillStyle = '#fef08a';
-          ctx.fillRect(-1, -26, 3, 26);
-          ctx.shadowColor = '#ef4444';
-          ctx.shadowBlur = 18;
-          ctx.strokeStyle = '#f59e0b';
-          ctx.lineWidth = 1.5;
-          ctx.strokeRect(-4, -29, 9, 32);
-          ctx.restore();
-
-        } else {
-          // ==================== NORMAL MONSTER MODEL ====================
-          const mColor = m.color || '#3b82f6';
-
-          if (mName.includes('稻草人')) {
-            // Strawman / Scarecrow (稻草人形象)
-            ctx.fillStyle = '#854d0e';
-            ctx.fillRect(sx - 2, entityCenterY - 14, 4, 24);
-            ctx.fillRect(sx - 12, entityCenterY - 8, 24, 3); // Arms
-            // Straw Hat
+        switch (typeKey) {
+          case 'chicken': {
+            // 小野鸡 - Plump feather body, comb, beak, fluttering wings
+            const wingAngle = Math.sin(now * 0.015) * 0.25;
+            
+            // Tail Feathers
+            ctx.fillStyle = '#d97706';
             ctx.beginPath();
-            ctx.moveTo(sx, entityCenterY - 24);
-            ctx.lineTo(sx - 12, entityCenterY - 12);
-            ctx.lineTo(sx + 12, entityCenterY - 12);
-            ctx.fillStyle = '#ca8a04';
+            ctx.moveTo(renderX - 8, renderY - 4);
+            ctx.lineTo(renderX - 16, renderY - 14);
+            ctx.lineTo(renderX - 10, renderY - 18);
+            ctx.lineTo(renderX - 4, renderY - 8);
             ctx.fill();
 
-          } else if (mName.includes('骷髅') || mName.includes('尸王') || mName.includes('僵尸')) {
-            // Skeleton / Undead Warrior (骷髅战士/尸王形象)
-            ctx.fillStyle = '#e2e8f0'; // Bone white
-            // Torso Ribs
-            ctx.fillRect(sx - 6, entityCenterY - 10, 12, 16);
-            ctx.strokeStyle = '#475569';
+            // Plump Yellow Body
+            ctx.beginPath();
+            ctx.arc(renderX, renderY - 4, 10, 0, Math.PI * 2);
+            ctx.fillStyle = '#fef08a';
+            ctx.fill();
+            ctx.strokeStyle = '#eab308';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            // Head
+            ctx.beginPath();
+            ctx.arc(renderX + 6, renderY - 12, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#fef08a';
+            ctx.fill();
+            ctx.stroke();
+
+            // Red Comb on Top
+            ctx.beginPath();
+            ctx.arc(renderX + 6, renderY - 18, 3, 0, Math.PI * 2);
+            ctx.arc(renderX + 4, renderY - 17, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ef4444';
+            ctx.fill();
+
+            // Beak
+            ctx.beginPath();
+            ctx.moveTo(renderX + 11, renderY - 12);
+            ctx.lineTo(renderX + 17, renderY - 10);
+            ctx.lineTo(renderX + 11, renderY - 8);
+            ctx.fillStyle = '#f97316';
+            ctx.fill();
+
+            // Eye
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            ctx.arc(renderX + 8, renderY - 13, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Fluttering Wing
+            ctx.save();
+            ctx.translate(renderX - 2, renderY - 6);
+            ctx.rotate(wingAngle);
+            ctx.fillStyle = '#fde047';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 7, 4, -0.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ca8a04';
+            ctx.stroke();
+            ctx.restore();
+
+            // Legs
+            ctx.strokeStyle = '#ea580c';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(renderX - 3, renderY + 5);
+            ctx.lineTo(renderX - 3, renderY + 11);
+            ctx.moveTo(renderX + 3, renderY + 5);
+            ctx.lineTo(renderX + 3, renderY + 11);
+            ctx.stroke();
+            break;
+          }
+
+          case 'deer': {
+            // 野生温顺鹿 - Graceful brown body, white spots, antlers
+            // Body
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY - 2, 14, 9, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#d97706';
+            ctx.fill();
+            ctx.strokeStyle = '#b45309';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            // White Spots on Back
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(renderX - 4, renderY - 6, 1.5, 0, Math.PI * 2);
+            ctx.arc(renderX + 2, renderY - 7, 1.5, 0, Math.PI * 2);
+            ctx.arc(renderX + 6, renderY - 5, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Neck & Head
+            ctx.beginPath();
+            ctx.moveTo(renderX + 8, renderY - 4);
+            ctx.lineTo(renderX + 12, renderY - 18);
+            ctx.lineTo(renderX + 18, renderY - 16);
+            ctx.lineTo(renderX + 12, renderY - 2);
+            ctx.fillStyle = '#d97706';
+            ctx.fill();
+
+            // Head
+            ctx.beginPath();
+            ctx.ellipse(renderX + 14, renderY - 18, 5, 3.5, 0.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Antlers
+            ctx.strokeStyle = '#78350f';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(renderX + 13, renderY - 21);
+            ctx.lineTo(renderX + 11, renderY - 30);
+            ctx.lineTo(renderX + 7, renderY - 33);
+            ctx.moveTo(renderX + 11, renderY - 27);
+            ctx.lineTo(renderX + 16, renderY - 32);
+
+            ctx.moveTo(renderX + 15, renderY - 21);
+            ctx.lineTo(renderX + 17, renderY - 31);
+            ctx.lineTo(renderX + 22, renderY - 34);
+            ctx.stroke();
+
+            // Black Nose & Eye
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(renderX + 18, renderY - 18, 1.5, 1.5);
+            ctx.arc(renderX + 14, renderY - 19, 1, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Legs
+            ctx.strokeStyle = '#92400e';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(renderX - 8, renderY + 6); ctx.lineTo(renderX - 8, renderY + 14);
+            ctx.moveTo(renderX - 2, renderY + 6); ctx.lineTo(renderX - 2, renderY + 14);
+            ctx.moveTo(renderX + 4, renderY + 6); ctx.lineTo(renderX + 4, renderY + 14);
+            ctx.moveTo(renderX + 10, renderY + 6); ctx.lineTo(renderX + 10, renderY + 14);
+            ctx.stroke();
+            break;
+          }
+
+          case 'hook_cat': {
+            // 毒蛇猫 - Agile feline, sharp hook claws, glowing eyes, venom aura
+            // Venom Toxic Foot Aura
+            ctx.save();
+            ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
+            ctx.shadowColor = '#22c55e';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY + 8, 16, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // Feline Body
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY - 2, 12, 8, -0.1, 0, Math.PI * 2);
+            ctx.fillStyle = '#22c55e';
+            ctx.fill();
+            ctx.strokeStyle = '#15803d';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Cat Tail
+            const tailAngle = Math.sin(now * 0.008) * 0.3;
+            ctx.beginPath();
+            ctx.moveTo(renderX - 11, renderY - 4);
+            ctx.quadraticCurveTo(renderX - 20, renderY - 14 + tailAngle * 10, renderX - 16, renderY - 20);
+            ctx.strokeStyle = '#16a34a';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            // Cat Head
+            ctx.beginPath();
+            ctx.arc(renderX + 10, renderY - 8, 6.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#22c55e';
+            ctx.fill();
+            ctx.stroke();
+
+            // Pointed Ears
+            ctx.fillStyle = '#15803d';
+            ctx.beginPath();
+            ctx.moveTo(renderX + 7, renderY - 13);
+            ctx.lineTo(renderX + 5, renderY - 20);
+            ctx.lineTo(renderX + 10, renderY - 14);
+            ctx.moveTo(renderX + 11, renderY - 13);
+            ctx.lineTo(renderX + 13, renderY - 20);
+            ctx.lineTo(renderX + 15, renderY - 13);
+            ctx.fill();
+
+            // Glowing Slit Eye
+            ctx.fillStyle = '#fef08a';
+            ctx.shadowColor = '#86efac';
+            ctx.shadowBlur = 6;
+            ctx.beginPath();
+            ctx.ellipse(renderX + 12, renderY - 9, 2, 1, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Metallic Hook Claws on Front Paws
+            ctx.strokeStyle = '#f8fafc';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(renderX + 10, renderY + 4);
+            ctx.lineTo(renderX + 16, renderY + 8);
+            ctx.lineTo(renderX + 14, renderY + 11);
+            ctx.stroke();
+            break;
+          }
+
+          case 'skeleton_warrior': {
+            // 骷髅死士 - Ribs, skull with green spectral eyes, bone blade, shield
+            // Ribcage & Torso
+            ctx.fillStyle = '#f1f5f9';
+            ctx.fillRect(renderX - 5, renderY - 10, 10, 14);
+            ctx.strokeStyle = '#334155';
             ctx.lineWidth = 1;
-            ctx.strokeRect(sx - 6, entityCenterY - 10, 12, 16);
+            ctx.strokeRect(renderX - 5, renderY - 10, 10, 14);
+
+            // Rib lines
+            ctx.strokeStyle = '#64748b';
+            ctx.beginPath();
+            ctx.moveTo(renderX - 4, renderY - 7); ctx.lineTo(renderX + 4, renderY - 7);
+            ctx.moveTo(renderX - 4, renderY - 4); ctx.lineTo(renderX + 4, renderY - 4);
+            ctx.moveTo(renderX - 4, renderY - 1); ctx.lineTo(renderX + 4, renderY - 1);
+            ctx.stroke();
+
             // Skull
             ctx.beginPath();
-            ctx.arc(sx, entityCenterY - 16, 6, 0, Math.PI * 2);
+            ctx.arc(renderX, renderY - 17, 6.5, 0, Math.PI * 2);
             ctx.fillStyle = '#f8fafc';
             ctx.fill();
-            // Glowing Eye Sockets
+            ctx.strokeStyle = '#475569';
+            ctx.stroke();
+
+            // Glowing Green Spectral Eyes
             ctx.fillStyle = '#10b981';
             ctx.shadowColor = '#34d399';
             ctx.shadowBlur = 8;
-            ctx.fillRect(sx - 3, entityCenterY - 17, 2, 2);
-            ctx.fillRect(sx + 1, entityCenterY - 17, 2, 2);
-            // Rusty Sword
-            ctx.fillStyle = '#94a3b8';
-            ctx.fillRect(sx + 9, entityCenterY - 16, 2.5, 18);
-
-          } else {
-            // General Beast / Monster Silhouette (通用兽型/魔物身姿)
-            // Body Tunic
             ctx.beginPath();
-            ctx.moveTo(sx - 10, entityCenterY - 10);
-            ctx.lineTo(sx + 10, entityCenterY - 10);
-            ctx.lineTo(sx + 8, entityCenterY + 10);
-            ctx.lineTo(sx - 8, entityCenterY + 10);
+            ctx.arc(renderX - 2.2, renderY - 18, 1.5, 0, Math.PI * 2);
+            ctx.arc(renderX + 2.2, renderY - 18, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Bone Sword in Hand
+            ctx.fillStyle = '#e2e8f0';
+            ctx.fillRect(renderX + 8, renderY - 18, 3, 20);
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillRect(renderX + 6, renderY - 8, 7, 2.5);
+
+            // Round Iron Shield in Offhand
+            ctx.beginPath();
+            ctx.arc(renderX - 8, renderY - 3, 7, 0, Math.PI * 2);
+            ctx.fillStyle = '#475569';
+            ctx.fill();
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+            break;
+          }
+
+          case 'white_boar': {
+            // 【精英】白野猪 - Massive pink/white boar, giant curved ivory tusks, spiked iron mace
+            // Elite Aura Ring
+            ctx.save();
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#ef4444';
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY + 10, 22, 10, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            // Heavy Torso
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY - 4, 18, 13, 0, 0, Math.PI * 2);
+            const boarGrad = ctx.createLinearGradient(renderX - 18, renderY - 10, renderX + 18, renderY + 10);
+            boarGrad.addColorStop(0, '#fce7f3');
+            boarGrad.addColorStop(1, '#f472b6');
+            ctx.fillStyle = boarGrad;
+            ctx.fill();
+            ctx.strokeStyle = '#db2777';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Boar Head & Snout
+            ctx.beginPath();
+            ctx.arc(renderX + 14, renderY - 6, 8, 0, Math.PI * 2);
+            ctx.fillStyle = '#fce7f3';
+            ctx.fill();
+            ctx.stroke();
+
+            // Snout
+            ctx.beginPath();
+            ctx.ellipse(renderX + 21, renderY - 5, 4, 3, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#f472b6';
+            ctx.fill();
+
+            // Giant Curved White Ivory Tusks
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = '#fef08a';
+            ctx.shadowBlur = 6;
+            ctx.beginPath();
+            ctx.moveTo(renderX + 18, renderY - 2);
+            ctx.quadraticCurveTo(renderX + 26, renderY - 12, renderX + 22, renderY - 16);
+            ctx.stroke();
+
+            // Wild Red Eye
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.arc(renderX + 15, renderY - 8, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Spiked Iron Mace
+            ctx.save();
+            ctx.translate(renderX + 10, renderY - 22);
+            ctx.rotate(0.3);
+            ctx.fillStyle = '#334155';
+            ctx.fillRect(-3, -16, 6, 22);
+            // Spikes on club
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(-6, -14, 12, 2.5);
+            ctx.fillRect(-6, -8, 12, 2.5);
+            ctx.restore();
+            break;
+          }
+
+          case 'woma_leader': {
+            // 【Boss】沃玛教主 - Purple bat wings, horned demon body, lightning scepter
+            // Bat Wings
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(renderX - 32, renderY - 6);
+            ctx.quadraticCurveTo(renderX - 48, renderY - 28, renderX - 22, renderY - 34);
+            ctx.quadraticCurveTo(renderX - 16, renderY - 16, renderX - 10, renderY - 10);
+            ctx.moveTo(renderX + 32, renderY - 6);
+            ctx.quadraticCurveTo(renderX + 48, renderY - 28, renderX + 22, renderY - 34);
+            ctx.quadraticCurveTo(renderX + 16, renderY - 16, renderX + 10, renderY - 10);
+            ctx.fillStyle = '#6b21a8';
+            ctx.shadowColor = '#c084fc';
+            ctx.shadowBlur = 12;
+            ctx.fill();
+            ctx.strokeStyle = '#a855f7';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.restore();
+
+            // Demon Body
+            ctx.beginPath();
+            ctx.moveTo(renderX - 14, renderY - 12);
+            ctx.lineTo(renderX + 14, renderY - 12);
+            ctx.lineTo(renderX + 10, renderY + 12);
+            ctx.lineTo(renderX - 10, renderY + 12);
+            ctx.closePath();
+            ctx.fillStyle = '#3b0764';
+            ctx.fill();
+            ctx.strokeStyle = '#a855f7';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Horned Head
+            ctx.beginPath();
+            ctx.arc(renderX, renderY - 20, 9, 0, Math.PI * 2);
+            ctx.fillStyle = '#2e1065';
+            ctx.fill();
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // 4 Demon Horns
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.moveTo(renderX - 6, renderY - 24); ctx.lineTo(renderX - 16, renderY - 36); ctx.lineTo(renderX - 3, renderY - 26);
+            ctx.moveTo(renderX + 6, renderY - 24); ctx.lineTo(renderX + 16, renderY - 36); ctx.lineTo(renderX + 3, renderY - 26);
+            ctx.fill();
+
+            // Burning Crimson Eyes
+            ctx.fillStyle = '#ef4444';
+            ctx.shadowColor = '#dc2626';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(renderX - 3, renderY - 20, 2, 0, Math.PI * 2);
+            ctx.arc(renderX + 3, renderY - 20, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Lightning Scepter
+            ctx.strokeStyle = '#eab308';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(renderX + 18, renderY + 10);
+            ctx.lineTo(renderX + 18, renderY - 28);
+            ctx.stroke();
+
+            // Floating Lightning Orb
+            ctx.fillStyle = '#e879f9';
+            ctx.shadowColor = '#c084fc';
+            ctx.shadowBlur = 14;
+            ctx.beginPath();
+            ctx.arc(renderX + 18, renderY - 32, 5, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+          }
+
+          case 'zuma_leader': {
+            // 【Boss】祖玛教主 - Ancient stone Golem idol, magma runes, floating rocks
+            // Floating Orbiting Stone Debris
+            const orbit = now * 0.003;
+            ctx.fillStyle = '#78350f';
+            ctx.beginPath();
+            ctx.arc(renderX + Math.cos(orbit) * 26, renderY + Math.sin(orbit) * 12, 4, 0, Math.PI * 2);
+            ctx.arc(renderX + Math.cos(orbit + Math.PI) * 26, renderY + Math.sin(orbit + Math.PI) * 12, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Heavy Stone Body
+            ctx.beginPath();
+            ctx.moveTo(renderX - 16, renderY - 14);
+            ctx.lineTo(renderX + 16, renderY - 14);
+            ctx.lineTo(renderX + 12, renderY + 14);
+            ctx.lineTo(renderX - 12, renderY + 14);
+            ctx.closePath();
+            ctx.fillStyle = '#292524';
+            ctx.fill();
+            ctx.strokeStyle = '#f97316';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#ea580c';
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+
+            // Magma Crack Runes on Body
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(renderX - 6, renderY - 8); ctx.lineTo(renderX, renderY); ctx.lineTo(renderX + 8, renderY + 6);
+            ctx.stroke();
+
+            // Ancient Stone Face
+            ctx.beginPath();
+            ctx.arc(renderX, renderY - 22, 10, 0, Math.PI * 2);
+            ctx.fillStyle = '#1c1917';
+            ctx.fill();
+            ctx.strokeStyle = '#dc2626';
+            ctx.stroke();
+
+            // Visor Red Eyes
+            ctx.fillStyle = '#ef4444';
+            ctx.shadowColor = '#dc2626';
+            ctx.shadowBlur = 12;
+            ctx.fillRect(renderX - 6, renderY - 23, 12, 3);
+            break;
+          }
+
+          case 'red_moon_demon': {
+            // 【世界Boss】赤月恶魔 - Eldritch blood core, 6 writhing tentacles, multiple eyes
+            // Writhing Blood Tentacles
+            ctx.save();
+            ctx.strokeStyle = '#991b1b';
+            ctx.lineWidth = 3.5;
+            ctx.shadowColor = '#dc2626';
+            ctx.shadowBlur = 10;
+            for (let i = 0; i < 6; i++) {
+              const angle = (i * Math.PI) / 3 + Math.sin(now * 0.005 + i) * 0.2;
+              const tx = renderX + Math.cos(angle) * 32;
+              const ty = renderY + Math.sin(angle) * 24;
+              ctx.beginPath();
+              ctx.moveTo(renderX, renderY - 6);
+              ctx.quadraticCurveTo(renderX + Math.cos(angle) * 16, renderY + Math.sin(angle) * 12, tx, ty);
+              ctx.stroke();
+            }
+            ctx.restore();
+
+            // Pulsating Core
+            const corePulse = Math.sin(now * 0.006) * 2;
+            ctx.beginPath();
+            ctx.arc(renderX, renderY - 6, 16 + corePulse, 0, Math.PI * 2);
+            const redGrad = ctx.createRadialGradient(renderX, renderY - 6, 2, renderX, renderY - 6, 18);
+            redGrad.addColorStop(0, '#f87171');
+            redGrad.addColorStop(0.5, '#dc2626');
+            redGrad.addColorStop(1, '#450a0a');
+            ctx.fillStyle = redGrad;
+            ctx.fill();
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Multiple Glowing Eyes
+            ctx.fillStyle = '#fef08a';
+            ctx.shadowColor = '#f59e0b';
+            ctx.shadowBlur = 6;
+            ctx.beginPath();
+            ctx.arc(renderX - 6, renderY - 10, 2.5, 0, Math.PI * 2);
+            ctx.arc(renderX + 6, renderY - 10, 2.5, 0, Math.PI * 2);
+            ctx.arc(renderX, renderY - 4, 3, 0, Math.PI * 2);
+            ctx.arc(renderX - 8, renderY - 2, 2, 0, Math.PI * 2);
+            ctx.arc(renderX + 8, renderY - 2, 2, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+          }
+
+          case 'sabak_guard': {
+            // 【沙城守卫】帝国禁卫军 - Golden full plate armor, red plume helmet, halberd spear
+            // Red Royal Cape
+            ctx.fillStyle = '#dc2626';
+            ctx.beginPath();
+            ctx.moveTo(renderX - 8, renderY - 8);
+            ctx.lineTo(renderX - 16, renderY + 12);
+            ctx.lineTo(renderX + 16, renderY + 12);
+            ctx.lineTo(renderX + 8, renderY - 8);
+            ctx.fill();
+
+            // Golden Plate Torso
+            ctx.beginPath();
+            ctx.moveTo(renderX - 10, renderY - 10);
+            ctx.lineTo(renderX + 10, renderY - 10);
+            ctx.lineTo(renderX + 8, renderY + 10);
+            ctx.lineTo(renderX - 8, renderY + 10);
+            ctx.closePath();
+            ctx.fillStyle = '#eab308';
+            ctx.fill();
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Helmet
+            ctx.beginPath();
+            ctx.arc(renderX, renderY - 16, 7, 0, Math.PI * 2);
+            ctx.fillStyle = '#ca8a04';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+
+            // Red Helmet Plume
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.moveTo(renderX, renderY - 23);
+            ctx.quadraticCurveTo(renderX - 8, renderY - 28, renderX - 12, renderY - 22);
+            ctx.lineTo(renderX, renderY - 20);
+            ctx.fill();
+
+            // Halberd Spear
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(renderX + 12, renderY + 14);
+            ctx.lineTo(renderX + 12, renderY - 28);
+            ctx.stroke();
+
+            // Spear Blade
+            ctx.fillStyle = '#f8fafc';
+            ctx.beginPath();
+            ctx.moveTo(renderX + 12, renderY - 34);
+            ctx.lineTo(renderX + 9, renderY - 28);
+            ctx.lineTo(renderX + 15, renderY - 28);
+            ctx.fill();
+            break;
+          }
+
+          case 'snake': {
+            // 毒蛇 - Coiling green viper with red tongue and glowing eyes
+            ctx.beginPath();
+            ctx.moveTo(renderX - 10, renderY + 4);
+            ctx.quadraticCurveTo(renderX - 12, renderY - 4, renderX - 4, renderY - 6);
+            ctx.quadraticCurveTo(renderX + 6, renderY - 8, renderX + 10, renderY - 2);
+            ctx.quadraticCurveTo(renderX + 12, renderY + 6, renderX, renderY + 8);
+            ctx.quadraticCurveTo(renderX - 8, renderY + 8, renderX + 4, renderY + 2);
+            ctx.strokeStyle = '#16a34a';
+            ctx.lineWidth = 4.5;
+            ctx.stroke();
+
+            // Snake Head
+            ctx.beginPath();
+            ctx.ellipse(renderX + 10, renderY - 6, 4.5, 3, 0.4, 0, Math.PI * 2);
+            ctx.fillStyle = '#22c55e';
+            ctx.fill();
+            ctx.strokeStyle = '#15803d';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Red Forked Tongue
+            const tongueFlick = Math.sin(now * 0.012) * 2;
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(renderX + 13, renderY - 5);
+            ctx.lineTo(renderX + 18, renderY - 5 + tongueFlick);
+            ctx.lineTo(renderX + 21, renderY - 7 + tongueFlick);
+            ctx.moveTo(renderX + 18, renderY - 5 + tongueFlick);
+            ctx.lineTo(renderX + 21, renderY - 3 + tongueFlick);
+            ctx.stroke();
+
+            // Yellow Glowing Eye
+            ctx.fillStyle = '#fef08a';
+            ctx.beginPath();
+            ctx.arc(renderX + 11, renderY - 7, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+          }
+
+          case 'scarecrow': {
+            // 稻草人 - Straw body, hat, wooden cross arms
+            ctx.fillStyle = '#854d0e';
+            ctx.fillRect(renderX - 2, renderY - 14, 4, 24);
+            ctx.fillRect(renderX - 12, renderY - 8, 24, 3);
+
+            // Straw Hat
+            ctx.beginPath();
+            ctx.moveTo(renderX, renderY - 24);
+            ctx.lineTo(renderX - 12, renderY - 12);
+            ctx.lineTo(renderX + 12, renderY - 12);
+            ctx.fillStyle = '#ca8a04';
+            ctx.fill();
+
+            // Glowing Eyes
+            ctx.fillStyle = '#fef08a';
+            ctx.fillRect(renderX - 3, renderY - 10, 2, 2);
+            ctx.fillRect(renderX + 1, renderY - 10, 2, 2);
+            break;
+          }
+
+          default: {
+            // General Refined Monster Silhouette
+            const mColor = m.color || '#3b82f6';
+            ctx.beginPath();
+            ctx.moveTo(renderX - 10, renderY - 10);
+            ctx.lineTo(renderX + 10, renderY - 10);
+            ctx.lineTo(renderX + 8, renderY + 10);
+            ctx.lineTo(renderX - 8, renderY + 10);
             ctx.closePath();
             ctx.fillStyle = mColor;
             ctx.fill();
@@ -585,19 +1727,18 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
             ctx.lineWidth = 1;
             ctx.stroke();
 
-            // Head & Horns
             ctx.beginPath();
-            ctx.arc(sx, entityCenterY - 15, 6.5, 0, Math.PI * 2);
+            ctx.arc(renderX, renderY - 15, 6.5, 0, Math.PI * 2);
             ctx.fillStyle = '#1e293b';
             ctx.fill();
             ctx.strokeStyle = mColor;
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
-            // Spikes
             ctx.fillStyle = '#fef08a';
-            ctx.fillRect(sx - 8, entityCenterY - 20, 3, 6);
-            ctx.fillRect(sx + 5, entityCenterY - 20, 3, 6);
+            ctx.fillRect(renderX - 8, renderY - 20, 3, 6);
+            ctx.fillRect(renderX + 5, renderY - 20, 3, 6);
+            break;
           }
         }
 
@@ -865,7 +2006,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         // 1. Tier-Differentiated Divine Mount Aura Ring & Magic Array
         const baseRadius = 40 + mTier * 2.2;
         ctx.beginPath();
-        ctx.ellipse(px, py + 2, baseRadius + mPulse, baseRadius / 2 + mPulse * 0.5, 0, 0, Math.PI * 2);
+        ctx.ellipse(px, py + 2, Math.max(0, baseRadius + mPulse), Math.max(0, (baseRadius + mPulse) / 2), 0, 0, Math.PI * 2);
         ctx.fillStyle = mtConfig.auraColor || 'rgba(245, 158, 11, 0.35)';
         ctx.fill();
         ctx.strokeStyle = mTier >= 9 ? '#fef08a' : mTier >= 6 ? '#e0e7ff' : '#fde047';
@@ -877,7 +2018,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         // Secondary Concentric Ring for Tier >= 3
         if (mTier >= 3) {
           ctx.beginPath();
-          ctx.ellipse(px, py + 2, baseRadius - 10 + mPulse, (baseRadius - 10) / 2 + mPulse * 0.5, 0, 0, Math.PI * 2);
+          ctx.ellipse(px, py + 2, Math.max(0, baseRadius - 10 + mPulse), Math.max(0, (baseRadius - 10 + mPulse) / 2), 0, 0, Math.PI * 2);
           ctx.strokeStyle = mTier >= 7 ? '#38bdf8' : '#f59e0b';
           ctx.lineWidth = 1;
           ctx.setLineDash([6, 4]);
@@ -1066,370 +2207,42 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         ctx.restore();
       }
 
-      // D. Full Humanoid Character Body & Armor Layer (完整人物姿态与铠甲/法袍)
-      const armorItem = engine.character.equipment.armor;
-      const helmetItem = engine.character.equipment.helmet;
-      const weaponItem = engine.character.equipment.weapon;
+      // D. Full Humanoid Character Body, Armor & Weapon Layer (使用全新的热血战术姿态、男女形象与装备渲染引擎 + 骑乘专属动作帧)
+      drawCharacterAvatar({
+        ctx,
+        px,
+        py,
+        playerCenterY,
+        character: engine.character,
+        now,
+        isMoving: distToPlayer > 0.02,
+        isMounted
+      });
 
-      // Color palette based on Armor & Profession
-      let armorColorPrimary = '#475569';
-      let armorColorSecondary = '#1e293b';
-      let armorTrimColor = '#94a3b8';
-      let armorGlowColor = '#64748b';
-
-      if (armorItem) {
-        if (armorItem.rarity === 'legendary' || armorItem.rarity === 'mythic') {
-          armorColorPrimary = '#b91c1c';
-          armorColorSecondary = '#7f1d1d';
-          armorTrimColor = '#f59e0b';
-          armorGlowColor = '#ef4444';
-        } else if (armorItem.rarity === 'epic') {
-          armorColorPrimary = '#6b21a8';
-          armorColorSecondary = '#4c1d95';
-          armorTrimColor = '#c084fc';
-          armorGlowColor = '#a855f7';
-        } else if (armorItem.rarity === 'rare') {
-          armorColorPrimary = '#1e40af';
-          armorColorSecondary = '#1e3a8a';
-          armorTrimColor = '#60a5fa';
-          armorGlowColor = '#3b82f6';
-        } else {
-          armorColorPrimary = '#334155';
-          armorColorSecondary = '#0f172a';
-          armorTrimColor = '#e2e8f0';
-          armorGlowColor = '#94a3b8';
-        }
-      } else {
-        // Default Starter Clothes by Profession
-        if (prof === 'warrior') {
-          armorColorPrimary = '#854d0e';
-          armorColorSecondary = '#451a03';
-          armorTrimColor = '#f59e0b';
-          armorGlowColor = '#d97706';
-        } else if (prof === 'mage') {
-          armorColorPrimary = '#3730a3';
-          armorColorSecondary = '#1e1b4b';
-          armorTrimColor = '#a5b4fc';
-          armorGlowColor = '#6366f1';
-        } else {
-          armorColorPrimary = '#065f46';
-          armorColorSecondary = '#022c22';
-          armorTrimColor = '#6ee7b7';
-          armorGlowColor = '#10b981';
-        }
-      }
-
-      ctx.save();
-
-      // D1. Legs / Boots (双腿与战靴)
-      ctx.fillStyle = armorColorSecondary;
-      ctx.fillRect(px - 7, playerCenterY + 8, 5, 12);
-      ctx.fillRect(px + 2, playerCenterY + 8, 5, 12);
-
-      // Steel Boot Caps
-      ctx.fillStyle = armorTrimColor;
-      ctx.fillRect(px - 8, playerCenterY + 16, 6, 4);
-      ctx.fillRect(px + 2, playerCenterY + 16, 6, 4);
-
-      // D2. Torso / Robe / Chestplate (胸甲 / 法袍躯干)
-      ctx.beginPath();
-      if (prof === 'mage' || prof === 'taoist') {
-        // Long Robe Silhouette (长袍裙摆)
-        ctx.moveTo(px - 9, playerCenterY - 10);
-        ctx.lineTo(px + 9, playerCenterY - 10);
-        ctx.lineTo(px + 12, playerCenterY + 14);
-        ctx.lineTo(px - 12, playerCenterY + 14);
-      } else {
-        // Warrior Heavy Plate Silhouette (重型铠甲胸甲)
-        ctx.moveTo(px - 11, playerCenterY - 12);
-        ctx.lineTo(px + 11, playerCenterY - 12);
-        ctx.lineTo(px + 8, playerCenterY + 10);
-        ctx.lineTo(px - 8, playerCenterY + 10);
-      }
-      ctx.closePath();
-
-      const chestGrad = ctx.createLinearGradient(px - 10, playerCenterY - 10, px + 10, playerCenterY + 10);
-      chestGrad.addColorStop(0, armorColorPrimary);
-      chestGrad.addColorStop(1, armorColorSecondary);
-      ctx.fillStyle = chestGrad;
-      ctx.fill();
-
-      // Armor Metallic Trim & Emblems (胸甲金边/图腾)
-      ctx.strokeStyle = armorTrimColor;
-      ctx.lineWidth = 1.5;
-      ctx.shadowColor = armorGlowColor;
-      ctx.shadowBlur = 6;
-      ctx.stroke();
-
-      // Belt (金腰带)
-      ctx.fillStyle = '#f59e0b';
-      ctx.fillRect(px - 9, playerCenterY + 2, 18, 3.5);
-      ctx.fillStyle = '#fef08a';
-      ctx.fillRect(px - 3, playerCenterY + 1, 6, 5.5); // Belt Buckle
-
-      // D3. Shoulder Pauldrons (双肩拉风肩甲)
-      ctx.beginPath();
-      // Left Shoulder
-      ctx.arc(px - 12, playerCenterY - 8, 5.5, 0, Math.PI * 2);
-      // Right Shoulder
-      ctx.arc(px + 12, playerCenterY - 8, 5.5, 0, Math.PI * 2);
-      ctx.fillStyle = armorTrimColor;
-      ctx.fill();
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      if (armorItem && (armorItem.rarity === 'epic' || armorItem.rarity === 'legendary' || armorItem.rarity === 'mythic')) {
-        // Spiked Shoulder Ornaments (高阶翅尖肩刺)
-        ctx.beginPath();
-        ctx.moveTo(px - 16, playerCenterY - 14);
-        ctx.lineTo(px - 11, playerCenterY - 8);
-        ctx.lineTo(px - 14, playerCenterY - 4);
-        ctx.moveTo(px + 16, playerCenterY - 14);
-        ctx.lineTo(px + 11, playerCenterY - 8);
-        ctx.lineTo(px + 14, playerCenterY - 4);
-        ctx.fillStyle = '#f59e0b';
-        ctx.fill();
-      }
-
-      // D4. Head, Hair & Helmet (头部/发型/头盔)
-      const headY = playerCenterY - 20;
-
-      if (helmetItem) {
-        // Armored Helmet Graphic (装备头盔外观)
-        ctx.beginPath();
-        ctx.arc(px, headY, 8, 0, Math.PI * 2);
-        ctx.fillStyle = armorColorPrimary;
-        ctx.fill();
-        ctx.strokeStyle = armorTrimColor;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        // Helmet Crown Plume / Crest
-        ctx.beginPath();
-        ctx.moveTo(px, headY - 11);
-        ctx.lineTo(px - 4, headY - 6);
-        ctx.lineTo(px + 4, headY - 6);
-        ctx.fillStyle = '#ef4444';
-        ctx.fill();
-      } else {
-        // Character Face & Hair (不同职业专属面貌)
-        // Face Skin Tone
-        ctx.beginPath();
-        ctx.arc(px, headY, 6.5, 0, Math.PI * 2);
-        ctx.fillStyle = '#fde047';
-        ctx.fill();
-
-        if (prof === 'warrior') {
-          // Warrior Red Headband & Dark Hair (战士战意头带)
-          ctx.fillStyle = '#ef4444';
-          ctx.fillRect(px - 7, headY - 4, 14, 3);
-          ctx.beginPath();
-          ctx.arc(px, headY - 3, 7, Math.PI, Math.PI * 2);
-          ctx.fillStyle = '#1e293b';
-          ctx.fill();
-        } else if (prof === 'mage') {
-          // Mage Arcane Hood & Crown (法师魔导兜帽)
-          ctx.beginPath();
-          ctx.arc(px, headY - 1, 8.5, Math.PI * 0.8, Math.PI * 2.2);
-          ctx.fillStyle = '#312e81';
-          ctx.fill();
-          ctx.strokeStyle = '#a5b4fc';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        } else {
-          // Taoist High Hair Bun & Jade Pin (道士道冠发髻)
-          ctx.beginPath();
-          ctx.arc(px, headY - 7, 3.5, 0, Math.PI * 2);
-          ctx.fillStyle = '#064e3b';
-          ctx.fill();
-          ctx.fillStyle = '#34d399';
-          ctx.fillRect(px - 6, headY - 7, 12, 1.5); // Jade Pin
-        }
-      }
-
-      // E. Hand-held Weapon Visualization (手持装备武器渲染)
-      const weaponX = px + 16;
-      const weaponY = playerCenterY - 6;
-
-      ctx.save();
-      ctx.translate(weaponX, weaponY);
-
-      if (prof === 'warrior') {
-        // Warrior Sword / Greatsword Pose (战士重剑/屠龙刀姿态)
-        ctx.rotate(-0.4);
-
-        const wName = weaponItem?.name || '';
-        const isDragonSlayer = wName.includes('屠龙') || wName.includes('裁决') || wName.includes('怒斩') || weaponItem?.rarity === 'legendary' || weaponItem?.rarity === 'mythic';
-
-        if (isDragonSlayer) {
-          // Legendary Dragon Slayer Sword (屠龙宝刀)
-          // Blade
-          ctx.fillStyle = '#f59e0b';
-          ctx.fillRect(-3, -28, 7, 26);
-          ctx.fillStyle = '#fef08a';
-          ctx.fillRect(-1, -26, 3, 22);
-
-          // Dragon Head Hilt
-          ctx.fillStyle = '#dc2626';
-          ctx.fillRect(-6, -4, 13, 5);
-
-          // Flame Aura
-          ctx.shadowColor = '#ef4444';
-          ctx.shadowBlur = 15;
-          ctx.strokeStyle = '#f97316';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(-4, -29, 9, 28);
-        } else {
-          // Steel Broadsword (常规战刀)
-          ctx.fillStyle = '#cbd5e1';
-          ctx.fillRect(-2, -22, 4, 20);
-          ctx.fillStyle = '#94a3b8';
-          ctx.fillRect(-4, -3, 9, 3); // Crossguard
-        }
-
-        // Sword Tip Star Sparkle
-        ctx.font = '10px sans-serif';
-        ctx.fillText('✨', -2, -28);
-
-      } else if (prof === 'mage') {
-        // Mage Arcane Staff Pose (法师魔杖/骨玉权杖姿态)
-        ctx.rotate(-0.15);
-
-        const mName = weaponItem?.name || '';
-        const isBoneJade = mName.includes('骨玉') || mName.includes('嗜魂') || mName.includes('镇天') || weaponItem?.rarity === 'legendary' || weaponItem?.rarity === 'mythic';
-
-        // Staff Shaft
-        ctx.fillStyle = isBoneJade ? '#f8fafc' : '#78350f';
-        ctx.fillRect(-1.5, -30, 3, 34);
-
-        // Staff Top Orb Head
-        ctx.beginPath();
-        ctx.arc(0, -32, isBoneJade ? 6 : 4.5, 0, Math.PI * 2);
-        ctx.fillStyle = isBoneJade ? '#a855f7' : '#38bdf8';
-        ctx.shadowColor = isBoneJade ? '#c084fc' : '#60a5fa';
-        ctx.shadowBlur = 14;
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        // Orbiting Magic Sparkle
-        const orbAngle = now * 0.006;
-        const ox = Math.cos(orbAngle) * 9;
-        const oy = -32 + Math.sin(orbAngle) * 5;
-        ctx.beginPath();
-        ctx.arc(ox, oy, 2, 0, Math.PI * 2);
-        ctx.fillStyle = '#fef08a';
-        ctx.fill();
-
-      } else {
-        // Taoist Fan / Sword Pose (道士玄天剑/逍遥扇姿态)
-        ctx.rotate(-0.25);
-
-        const tName = weaponItem?.name || '';
-        const isFan = tName.includes('扇') || tName.includes('逍遥');
-
-        if (isFan) {
-          // Taoist Xuan-Yao Fan (逍遥扇)
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.lineTo(-12, -24);
-          ctx.quadraticCurveTo(0, -32, 12, -24);
-          ctx.closePath();
-          ctx.fillStyle = '#fef08a';
-          ctx.shadowColor = '#10b981';
-          ctx.shadowBlur = 10;
-          ctx.fill();
-          ctx.strokeStyle = '#d97706';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        } else {
-          // Taoist Jade Sword (降魔/玄天剑)
-          ctx.fillStyle = '#34d399';
-          ctx.fillRect(-1.5, -24, 3, 22);
-          ctx.fillStyle = '#f59e0b';
-          ctx.fillRect(-4, -3, 9, 3);
-          ctx.shadowColor = '#6ee7b7';
-          ctx.shadowBlur = 10;
-        }
-
-        // Floating Taoist Paper Charm (道家秘符)
-        const charmY = -18 + Math.sin(now * 0.005) * 4;
-        ctx.fillStyle = '#ef4444';
-        ctx.fillRect(8, charmY, 5, 9);
-        ctx.fillStyle = '#fef08a';
-        ctx.fillRect(9.5, charmY + 2, 2, 5);
-      }
-
-      ctx.restore(); // Restore Weapon transform
-
-      ctx.restore(); // Restore Character Body
-
-      // E. Name Tag & Rebirth / Guild / Mount Titles
-      let titleOffset = playerCenterY - 36;
-
-      if (engine.character.mount?.isMounted) {
-        const mTier = engine.character.mount.tier;
-        const mtConfig = MOUNT_TIERS[mTier] || MOUNT_TIERS[1];
-        ctx.font = 'bold 10px sans-serif';
-        ctx.fillStyle = '#fde047';
-        ctx.textAlign = 'center';
-        ctx.shadowColor = '#d97706';
-        ctx.shadowBlur = 8;
-        ctx.fillText(`【骑乘 · ${mtConfig.name} (${engine.character.mount.level}星)】`, px, titleOffset);
-        titleOffset -= 13;
-      }
+      // E. Name Tag & Guild Name (简化头顶信息，仅显示名称与行会名称)
+      let titleOffset = playerCenterY - 28;
 
       if (engine.character.guildName) {
-        ctx.font = 'bold 10px sans-serif';
+        ctx.font = 'bold 11px sans-serif';
         ctx.fillStyle = '#7dd3fc';
         ctx.textAlign = 'center';
         ctx.shadowColor = '#0284c7';
         ctx.shadowBlur = 6;
         ctx.fillText(`<${engine.character.guildName}>`, px, titleOffset);
-        titleOffset -= 13;
+        titleOffset -= 14;
       }
-
-      const rbLvl = engine.character.rebirthLevel || 0;
-      const titleText = rbLvl > 0
-        ? `[${rbLvl}转] ${engine.character.name} LV.${engine.character.level}`
-        : `${engine.character.name} LV.${engine.character.level}`;
 
       ctx.font = 'bold 12px sans-serif';
       ctx.fillStyle = '#fef08a';
       ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
       ctx.shadowColor = '#000000';
       ctx.shadowBlur = 8;
-      ctx.fillText(titleText, px, titleOffset);
-
-      // F. Polished Dual Health (HP) & Mana (MP) Bars
-      const hpRatio = Math.max(0, Math.min(1, engine.stats.hp / engine.stats.maxHp));
-      const mpRatio = Math.max(0, Math.min(1, engine.stats.mp / engine.stats.maxMp));
-
-      const dualBarW = 54;
-      const barX = px - dualBarW / 2;
-      const hpBarY = playerCenterY - 32;
-      const mpBarY = hpBarY + 5;
-
-      // Dark Glass Background Box
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-      ctx.fillRect(barX - 2, hpBarY - 2, dualBarW + 4, 12);
-      ctx.strokeStyle = 'rgba(245, 158, 11, 0.8)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(barX - 2, hpBarY - 2, dualBarW + 4, 12);
-
-      // HP Bar Fill (Red)
-      ctx.fillStyle = '#ef4444';
-      ctx.fillRect(barX, hpBarY, dualBarW * hpRatio, 4);
-
-      // MP Bar Fill (Blue)
-      ctx.fillStyle = '#3b82f6';
-      ctx.fillRect(barX, mpBarY, dualBarW * mpRatio, 4);
+      ctx.fillText(engine.character.name, px, titleOffset);
 
       ctx.restore();
 
-      // 8. Draw Floating Particles & Damage Numbers (Real-Time Combat Text System)
+      // 8. Draw Floating Particles, Combat Visual Effects (VFX) & Damage Numbers
       engine.particles.forEach(p => {
         const { sx: baseSx, sy: baseSy } = toScreen(p.x, p.y);
         const elapsed = now - p.startTime;
@@ -1437,6 +2250,606 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
 
         // Alpha fade out near end
         const alpha = Math.max(0, 1 - Math.pow(progress, 1.4));
+
+        if (p.vfxKind) {
+          // --- 2D VISUAL COMBAT EFFECTS ENGINE ---
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, 1 - Math.pow(progress, 1.6));
+
+          switch (p.vfxKind) {
+            case 'slash': {
+              // Standard Physical Melee Sword Slash
+              const angle = p.angle || 0;
+              ctx.translate(baseSx, baseSy - 10);
+              ctx.rotate(angle);
+
+              const radius = 30 + progress * 14;
+              ctx.beginPath();
+              ctx.arc(0, 0, radius, -Math.PI * 0.45, Math.PI * 0.45, false);
+              ctx.lineWidth = 5 * (1 - progress);
+              ctx.shadowColor = '#fbbf24';
+              ctx.shadowBlur = 12;
+
+              const slashGrad = ctx.createLinearGradient(-radius, 0, radius, 0);
+              slashGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+              slashGrad.addColorStop(0.5, '#ffffff');
+              slashGrad.addColorStop(1, '#f59e0b');
+              ctx.strokeStyle = slashGrad;
+              ctx.stroke();
+
+              // Sparkles
+              for (let i = 0; i < 4; i++) {
+                const sparkAng = (i - 1.5) * 0.35 + angle;
+                const sparkDist = 12 + progress * 32;
+                const spx = Math.cos(sparkAng) * sparkDist;
+                const spy = Math.sin(sparkAng) * sparkDist;
+                ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#fbbf24';
+                ctx.fillRect(spx, spy, 3, 3);
+              }
+              break;
+            }
+
+            case 'fire_sword': {
+              // Flaming Sword Burst (烈火剑法)
+              const angle = p.angle || 0;
+              ctx.translate(baseSx, baseSy - 12);
+
+              // 1. Fiery Blade Arc
+              ctx.save();
+              ctx.rotate(angle);
+              const arcRad = 36 + progress * 22;
+              ctx.beginPath();
+              ctx.arc(0, 0, arcRad, -Math.PI * 0.5, Math.PI * 0.5, false);
+              ctx.lineWidth = 14 * (1 - progress * 0.7);
+              ctx.shadowColor = '#ea580c';
+              ctx.shadowBlur = 24;
+
+              const fireGrad = ctx.createLinearGradient(-arcRad, 0, arcRad, 0);
+              fireGrad.addColorStop(0, '#fef08a');
+              fireGrad.addColorStop(0.4, '#f97316');
+              fireGrad.addColorStop(1, '#dc2626');
+              ctx.strokeStyle = fireGrad;
+              ctx.stroke();
+              ctx.restore();
+
+              // 2. Erupting Flame Pillar
+              const flameH = Math.max(0, (1 - Math.pow(progress, 0.5)) * 55);
+              ctx.beginPath();
+              ctx.ellipse(0, -flameH / 2, Math.max(0, 18 * (1 - progress * 0.5)), flameH, 0, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(239, 68, 68, 0.45)';
+              ctx.shadowColor = '#ef4444';
+              ctx.shadowBlur = 20;
+              ctx.fill();
+
+              // Flame Embers
+              for (let i = 0; i < 7; i++) {
+                const eProgress = (progress + i * 0.14) % 1;
+                const ex = (Math.sin(i * 3 + now * 0.01) * 20) * (1 - eProgress);
+                const ey = -eProgress * 50;
+                ctx.fillStyle = i % 2 === 0 ? '#fef08a' : '#f97316';
+                ctx.beginPath();
+                ctx.arc(ex, ey, (1 - eProgress) * 3.5 + 1, 0, Math.PI * 2);
+                ctx.fill();
+              }
+              break;
+            }
+
+            case 'crescent': {
+              // Crescent Moon Energy Wave (半月弯刀)
+              const waveRadius = Math.max(0, (p.radius || 2.2) * tileWidth * progress);
+              ctx.translate(baseSx, baseSy);
+
+              ctx.beginPath();
+              ctx.ellipse(0, 0, waveRadius, waveRadius * 0.5, 0, 0, Math.PI * 2);
+              ctx.lineWidth = 8 * (1 - progress);
+              ctx.shadowColor = '#38bdf8';
+              ctx.shadowBlur = 18;
+
+              const cGrad = ctx.createRadialGradient(0, 0, waveRadius * 0.3, 0, 0, waveRadius);
+              cGrad.addColorStop(0, 'rgba(56, 189, 248, 0)');
+              cGrad.addColorStop(0.7, 'rgba(56, 189, 248, 0.8)');
+              cGrad.addColorStop(1, 'rgba(255, 255, 255, 0.95)');
+              ctx.strokeStyle = cGrad;
+              ctx.stroke();
+              break;
+            }
+
+            case 'thunder': {
+              // Sky Lightning Strike (狂龙紫电 / 疾光电影)
+              const startY = baseSy - 210;
+              ctx.shadowColor = '#a855f7';
+              ctx.shadowBlur = 25;
+
+              ctx.beginPath();
+              let currX = baseSx + (Math.sin(now * 0.05) * 12);
+              ctx.moveTo(currX, startY);
+
+              const steps = 7;
+              for (let i = 1; i <= steps; i++) {
+                const nextY = startY + (i / steps) * 210;
+                const nextX = baseSx + (i === steps ? 0 : (Math.sin(i * 2.5 + now * 0.02) * 26));
+                ctx.lineTo(nextX, nextY);
+              }
+
+              ctx.lineWidth = 7 * (1 - progress * 0.5);
+              ctx.strokeStyle = progress < 0.3 ? '#ffffff' : '#c084fc';
+              ctx.stroke();
+
+              ctx.lineWidth = 2.5;
+              ctx.strokeStyle = '#ffffff';
+              ctx.stroke();
+
+              // Impact Flash Ring
+              const impactR = Math.max(0, 32 * progress);
+              ctx.beginPath();
+              ctx.ellipse(baseSx, baseSy, impactR, impactR * 0.5, 0, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(168, 85, 247, ${0.4 * (1 - progress)})`;
+              ctx.fill();
+              ctx.strokeStyle = '#38bdf8';
+              ctx.lineWidth = 3;
+              ctx.stroke();
+              break;
+            }
+
+            case 'ice_storm': {
+              // Blizzard Ice Tornado (冰咆哮)
+              ctx.translate(baseSx, baseSy);
+              const iceRadius = Math.max(0, (p.radius || 2.5) * tileWidth * 0.5);
+
+              ctx.beginPath();
+              ctx.ellipse(0, 0, Math.max(0, iceRadius * (0.5 + progress * 0.5)), Math.max(0, iceRadius * 0.5 * (0.5 + progress * 0.5)), 0, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(56, 189, 248, ${0.25 * (1 - progress)})`;
+              ctx.shadowColor = '#0284c7';
+              ctx.shadowBlur = 18;
+              ctx.fill();
+
+              // Swirling Ice Shards
+              for (let i = 0; i < 7; i++) {
+                const rotAng = now * 0.008 + (i * Math.PI * 2) / 7;
+                const distR = iceRadius * (0.3 + progress * 0.7);
+                const ix = Math.cos(rotAng) * distR;
+                const iy = Math.sin(rotAng) * distR * 0.5 - (progress * 18);
+
+                ctx.save();
+                ctx.translate(ix, iy);
+                ctx.rotate(rotAng * 2);
+
+                ctx.beginPath();
+                ctx.moveTo(0, -7);
+                ctx.lineTo(3.5, 0);
+                ctx.lineTo(0, 7);
+                ctx.lineTo(-3.5, 0);
+                ctx.closePath();
+                ctx.fillStyle = i % 2 === 0 ? '#e0f2fe' : '#38bdf8';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.restore();
+              }
+              break;
+            }
+
+            case 'poison': {
+              // Toxic Mist Cloud (施毒术)
+              ctx.translate(baseSx, baseSy);
+
+              const poisonR = Math.max(0, 24 + Math.sin(now * 0.006) * 5);
+              ctx.beginPath();
+              ctx.ellipse(0, 0, poisonR, poisonR * 0.5, 0, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(34, 197, 94, ${0.35 * (1 - progress)})`;
+              ctx.shadowColor = '#16a34a';
+              ctx.shadowBlur = 16;
+              ctx.fill();
+
+              for (let i = 0; i < 5; i++) {
+                const bx = (Math.sin(i * 2 + now * 0.005) * 16);
+                const by = (Math.cos(i * 3 + now * 0.007) * 8) - (progress * 10);
+                ctx.fillStyle = i % 2 === 0 ? '#22c55e' : '#a855f7';
+                ctx.beginPath();
+                ctx.arc(bx, by, 3 + (i % 3), 0, Math.PI * 2);
+                ctx.fill();
+              }
+              break;
+            }
+
+            case 'heal_beam': {
+              // Divine Holy Light Column (治愈术)
+              const beamH = 170;
+              ctx.translate(baseSx, baseSy);
+
+              const beamGrad = ctx.createLinearGradient(0, -beamH, 0, 0);
+              beamGrad.addColorStop(0, 'rgba(52, 211, 153, 0)');
+              beamGrad.addColorStop(0.5, 'rgba(52, 211, 153, 0.45)');
+              beamGrad.addColorStop(1, 'rgba(255, 255, 255, 0.9)');
+
+              ctx.beginPath();
+              ctx.rect(-16, -beamH, 32, beamH);
+              ctx.fillStyle = beamGrad;
+              ctx.shadowColor = '#34d399';
+              ctx.shadowBlur = 20;
+              ctx.fill();
+
+              ctx.beginPath();
+              ctx.ellipse(0, 0, 22, 11, 0, 0, Math.PI * 2);
+              ctx.strokeStyle = '#fef08a';
+              ctx.lineWidth = 3;
+              ctx.stroke();
+
+              for (let i = 0; i < 5; i++) {
+                const hProgress = (progress + i * 0.18) % 1;
+                const hx = (Math.sin(i * 2 + now * 0.008) * 12);
+                const hy = -hProgress * beamH;
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(hx, hy, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+              }
+              break;
+            }
+
+            case 'talisman': {
+              // Flying Taoist Paper Talisman (灵魂火符)
+              const startX = p.startX !== undefined ? p.startX : p.x - 2;
+              const startY = p.startY !== undefined ? p.startY : p.y - 2;
+              const { sx: ssx, sy: ssy } = toScreen(startX, startY);
+
+              const curSx = ssx + (baseSx - ssx) * progress;
+              const arcH = Math.sin(progress * Math.PI) * 40;
+              const curSy = ssy + (baseSy - ssy) * progress - arcH;
+
+              ctx.translate(curSx, curSy);
+
+              if (progress < 0.75) {
+                ctx.rotate(progress * Math.PI * 2);
+                ctx.fillStyle = '#fef08a';
+                ctx.fillRect(-5, -9, 10, 18);
+                ctx.strokeStyle = '#dc2626';
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(-5, -9, 10, 18);
+
+                ctx.fillStyle = '#dc2626';
+                ctx.fillRect(-1.5, -5, 3, 10);
+
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.6)';
+                ctx.beginPath();
+                ctx.arc(-7, 0, 5, 0, Math.PI * 2);
+                ctx.fill();
+              } else {
+                const burstR = Math.max(0, (progress - 0.75) * 4 * 30);
+                ctx.beginPath();
+                ctx.arc(0, 0, burstR, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.5)';
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 18;
+                ctx.fill();
+              }
+              break;
+            }
+
+            case 'shield': {
+              // Magic Barrier Shell (魔法盾)
+              ctx.translate(baseSx, baseSy - 18);
+              const pulseR = Math.max(0, 25 + Math.sin(now * 0.01) * 3);
+
+              ctx.beginPath();
+              ctx.ellipse(0, 0, pulseR, pulseR * 0.8, 0, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
+              ctx.strokeStyle = '#38bdf8';
+              ctx.lineWidth = 2.5;
+              ctx.shadowColor = '#38bdf8';
+              ctx.shadowBlur = 16;
+              ctx.fill();
+              ctx.stroke();
+              break;
+            }
+
+            case 'claw': {
+              // Monster Claw Scratch Attack
+              ctx.translate(baseSx, baseSy - 10);
+              const angle = p.angle || 0;
+              ctx.rotate(angle);
+
+              ctx.strokeStyle = '#ef4444';
+              ctx.lineWidth = 3.5;
+              ctx.shadowColor = '#dc2626';
+              ctx.shadowBlur = 12;
+
+              for (let i = -1; i <= 1; i++) {
+                const offsetY = i * 7;
+                const slashLen = 20 * (1 - progress);
+                ctx.beginPath();
+                ctx.moveTo(-slashLen, offsetY - 7);
+                ctx.lineTo(slashLen, offsetY + 7);
+                ctx.stroke();
+              }
+              break;
+            }
+
+            case 'boss_smash': {
+              // Boss Ground Smash Shockwave
+              ctx.translate(baseSx, baseSy);
+              const shockR = Math.max(0, (p.radius || 2.8) * tileWidth * 0.5 * progress);
+
+              ctx.beginPath();
+              ctx.ellipse(0, 0, shockR, shockR * 0.5, 0, 0, Math.PI * 2);
+              ctx.lineWidth = 9 * (1 - progress);
+              ctx.strokeStyle = '#dc2626';
+              ctx.shadowColor = '#f97316';
+              ctx.shadowBlur = 24;
+              ctx.stroke();
+
+              for (let i = 0; i < 6; i++) {
+                const cAng = (i * Math.PI * 2) / 6;
+                const cx = Math.cos(cAng) * shockR;
+                const cy = Math.sin(cAng) * shockR * 0.5;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(cx, cy);
+                ctx.strokeStyle = '#f59e0b';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+              }
+              break;
+            }
+
+            case 'death': {
+              // Monster Death Soul Ascension
+              ctx.translate(baseSx, baseSy);
+              for (let i = 0; i < 5; i++) {
+                const sProgress = (progress + i * 0.16) % 1;
+                const sxPos = Math.sin(i * 2 + now * 0.005) * 15;
+                const syPos = -sProgress * 40;
+                ctx.fillStyle = i % 2 === 0 ? '#fbbf24' : '#c084fc';
+                ctx.shadowColor = '#fbbf24';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(sxPos, syPos, (1 - sProgress) * 3 + 1, 0, Math.PI * 2);
+                ctx.fill();
+              }
+              break;
+            }
+
+            case 'spark_burst': {
+              // Critical Hit Starburst
+              ctx.translate(baseSx, baseSy);
+              for (let i = 0; i < 8; i++) {
+                const sAng = (i * Math.PI * 2) / 8;
+                const sDist = progress * 28;
+                const spx = Math.cos(sAng) * sDist;
+                const spy = Math.sin(sAng) * sDist * 0.6;
+                ctx.fillStyle = '#fffbeb';
+                ctx.shadowColor = '#fbbf24';
+                ctx.shadowBlur = 12;
+                ctx.fillRect(spx - 2, spy - 2, 4, 4);
+              }
+              break;
+            }
+
+            case 'hit_warrior': {
+              // 战士专属打击特效：烈火光影 (Fiery Cross Blade Light, Erupting Embers, Radiant Flame Shockwave)
+              ctx.translate(baseSx, baseSy - 10);
+
+              // 1. Double Fiery Blade Light Cross Slashes
+              ctx.save();
+              for (let s = 0; s < 2; s++) {
+                ctx.rotate(s === 0 ? Math.PI * 0.25 : -Math.PI * 0.25);
+                const slashRad = 26 + progress * 22;
+
+                ctx.beginPath();
+                ctx.arc(0, 0, slashRad, -Math.PI * 0.38, Math.PI * 0.38, false);
+                ctx.lineWidth = 11 * (1 - progress * 0.75);
+                ctx.shadowColor = '#ea580c';
+                ctx.shadowBlur = 22;
+
+                const fireGrad = ctx.createLinearGradient(-slashRad, 0, slashRad, 0);
+                fireGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+                fireGrad.addColorStop(0.3, '#fef08a');
+                fireGrad.addColorStop(0.7, '#f97316');
+                fireGrad.addColorStop(1, '#dc2626');
+
+                ctx.strokeStyle = fireGrad;
+                ctx.stroke();
+              }
+              ctx.restore();
+
+              // 2. Fiery Erupting Impact Shockwave Ring
+              const ringR = Math.max(0, 20 + progress * 32);
+              ctx.beginPath();
+              ctx.ellipse(0, 0, ringR, ringR * 0.5, 0, 0, Math.PI * 2);
+              ctx.lineWidth = 4 * (1 - progress);
+              ctx.strokeStyle = '#f59e0b';
+              ctx.shadowColor = '#ef4444';
+              ctx.shadowBlur = 18;
+              ctx.stroke();
+
+              // 3. Erupting Flame Embers
+              for (let i = 0; i < 8; i++) {
+                const ang = (i * Math.PI * 2) / 8 + progress * 0.6;
+                const dist = (12 + progress * 38);
+                const ex = Math.cos(ang) * dist;
+                const ey = Math.sin(ang) * dist * 0.55 - (progress * 18);
+
+                ctx.beginPath();
+                ctx.arc(ex, ey, Math.max(0, (1 - progress) * 4.5 + 1), 0, Math.PI * 2);
+                ctx.fillStyle = i % 2 === 0 ? '#fef08a' : '#f97316';
+                ctx.shadowColor = '#f43f5e';
+                ctx.shadowBlur = 12;
+                ctx.fill();
+              }
+
+              // 4. Intense Center Fire Burst Core
+              ctx.beginPath();
+              ctx.arc(0, 0, Math.max(0, (1 - progress) * 15), 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(254, 240, 138, 0.9)';
+              ctx.shadowColor = '#fbbf24';
+              ctx.shadowBlur = 18;
+              ctx.fill();
+
+              break;
+            }
+
+            case 'hit_mage': {
+              // 法师专属打击特效：元素波纹 (Concentric Elemental Ripple Waves & Arcane Starbursts)
+              ctx.translate(baseSx, baseSy - 8);
+
+              // 1. Triple Concentric Elemental Ripple Waves
+              for (let r = 0; r < 3; r++) {
+                const delay = r * 0.12;
+                const rProgress = Math.max(0, Math.min(1, (progress - delay) / (1 - delay)));
+                if (rProgress <= 0) continue;
+
+                const waveRadius = rProgress * (34 + r * 12);
+                ctx.beginPath();
+                ctx.ellipse(0, 0, waveRadius, waveRadius * 0.5, 0, 0, Math.PI * 2);
+                ctx.lineWidth = Math.max(1, (1 - rProgress) * 6.5);
+
+                const rGrad = ctx.createRadialGradient(0, 0, waveRadius * 0.2, 0, 0, waveRadius);
+                if (r === 0) {
+                  rGrad.addColorStop(0, 'rgba(56, 189, 248, 0)');
+                  rGrad.addColorStop(0.7, 'rgba(56, 189, 248, 0.75)');
+                  rGrad.addColorStop(1, 'rgba(255, 255, 255, 0.95)');
+                  ctx.shadowColor = '#38bdf8';
+                } else if (r === 1) {
+                  rGrad.addColorStop(0, 'rgba(168, 85, 247, 0)');
+                  rGrad.addColorStop(0.7, 'rgba(168, 85, 247, 0.75)');
+                  rGrad.addColorStop(1, 'rgba(250, 204, 21, 0.9)');
+                  ctx.shadowColor = '#a855f7';
+                } else {
+                  rGrad.addColorStop(0, 'rgba(14, 165, 233, 0)');
+                  rGrad.addColorStop(0.7, 'rgba(14, 165, 233, 0.65)');
+                  rGrad.addColorStop(1, 'rgba(56, 189, 248, 0.85)');
+                  ctx.shadowColor = '#0284c7';
+                }
+
+                ctx.strokeStyle = rGrad;
+                ctx.shadowBlur = 18;
+                ctx.stroke();
+              }
+
+              // 2. Swirling Arcane Star Sparks
+              for (let i = 0; i < 8; i++) {
+                const rotAng = (i * Math.PI * 2) / 8 + now * 0.008;
+                const orbitR = 14 + progress * 34;
+                const sx = Math.cos(rotAng) * orbitR;
+                const sy = Math.sin(rotAng) * orbitR * 0.5 - (progress * 14);
+
+                ctx.save();
+                ctx.translate(sx, sy);
+                ctx.rotate(rotAng);
+                ctx.fillStyle = i % 3 === 0 ? '#e0f2fe' : i % 3 === 1 ? '#e9d5ff' : '#fef08a';
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 12;
+
+                // 4-point star shape
+                ctx.beginPath();
+                ctx.moveTo(0, -6);
+                ctx.lineTo(1.8, -1.8);
+                ctx.lineTo(6, 0);
+                ctx.lineTo(1.8, 1.8);
+                ctx.lineTo(0, 6);
+                ctx.lineTo(-1.8, 1.8);
+                ctx.lineTo(-6, 0);
+                ctx.lineTo(-1.8, -1.8);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+              }
+
+              // 3. Arcane Elemental Core Flash
+              ctx.beginPath();
+              ctx.arc(0, 0, Math.max(0, (1 - progress) * 13), 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(56, 189, 248, 0.9)';
+              ctx.shadowColor = '#a855f7';
+              ctx.shadowBlur = 18;
+              ctx.fill();
+
+              break;
+            }
+
+            case 'hit_taoist': {
+              // 道士专属打击特效：符咒闪烁 (Paper Talismans, Taoist Bagua Floor Seal & Spiritual Runes)
+              ctx.translate(baseSx, baseSy - 10);
+
+              // 1. Taoist Spiritual Bagua / Yin-Yang Floor Seal Ring
+              const sealR = 22 + progress * 18;
+              ctx.save();
+              ctx.beginPath();
+              ctx.ellipse(0, 0, sealR, sealR * 0.5, 0, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(34, 197, 94, ${0.28 * (1 - progress)})`;
+              ctx.shadowColor = '#10b981';
+              ctx.shadowBlur = 18;
+              ctx.fill();
+
+              ctx.strokeStyle = 'rgba(254, 240, 138, 0.9)';
+              ctx.lineWidth = 1.8;
+              ctx.setLineDash([6, 4]);
+              ctx.stroke();
+              ctx.restore();
+
+              // 2. Flying Paper Talismans Flashing & Swirling Outwards
+              for (let i = 0; i < 4; i++) {
+                const tAng = (i * Math.PI * 0.5) + (progress * Math.PI * 1.3);
+                const tDist = 12 + progress * 34;
+                const tx = Math.cos(tAng) * tDist;
+                const ty = Math.sin(tAng) * tDist * 0.5 - (progress * 24);
+
+                ctx.save();
+                ctx.translate(tx, ty);
+                ctx.rotate(tAng + progress * Math.PI);
+
+                // Yellow Paper Talisman Tag
+                ctx.fillStyle = '#fde047';
+                ctx.shadowColor = '#10b981';
+                ctx.shadowBlur = 14;
+                ctx.fillRect(-5, -9, 10, 18);
+
+                // Red Cinnabar Seal Border & Line (朱砂符文)
+                ctx.strokeStyle = '#dc2626';
+                ctx.lineWidth = 1.2;
+                ctx.strokeRect(-5, -9, 10, 18);
+                ctx.beginPath();
+                ctx.moveTo(0, -6);
+                ctx.lineTo(0, 6);
+                ctx.stroke();
+
+                // Mystic Spiritual Aura Spark
+                ctx.fillStyle = '#22c55e';
+                ctx.beginPath();
+                ctx.arc(0, -10, 3.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+              }
+
+              // 3. Spiritual Energy Rune Sparkles
+              for (let i = 0; i < 6; i++) {
+                const sProgress = (progress + i * 0.16) % 1;
+                const rx = (Math.sin(i * 2 + now * 0.006) * 20);
+                const ry = -sProgress * 38;
+                ctx.fillStyle = i % 2 === 0 ? '#86efac' : '#fef08a';
+                ctx.shadowColor = '#22c55e';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(rx, ry, (1 - sProgress) * 3.5 + 1, 0, Math.PI * 2);
+                ctx.fill();
+              }
+
+              // 4. White & Emerald Holy Flash Impact Core
+              ctx.beginPath();
+              ctx.arc(0, 0, Math.max(0, (1 - progress) * 12), 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+              ctx.shadowColor = '#10b981';
+              ctx.shadowBlur = 22;
+              ctx.fill();
+
+              break;
+            }
+          }
+
+          ctx.restore();
+          return;
+        }
 
         // Horizontal jitter & drift so overlapping numbers don't clash
         const driftX = (p.offsetRandomX || 0) * tileWidth;
@@ -1579,6 +2992,152 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         ctx.restore();
       });
 
+      // 6.4. Draw Quest Navigation Path Line, Target Beacon & Guidance Arrow
+      if (engine.questNavTarget && engine.questNavTarget.mapId === engine.currentMapId) {
+        const nav = engine.questNavTarget;
+        const { sx: targetSx, sy: targetSy } = toScreen(nav.targetX, nav.targetY);
+
+        ctx.save();
+
+        // A. Dynamic Glowing Animated Path Line connecting Player to Target
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+
+        // Smooth curve midway for isometric depth
+        const midX = (px + targetSx) / 2;
+        const midY = (py + targetSy) / 2 - 12;
+        ctx.quadraticCurveTo(midX, midY, targetSx, targetSy);
+
+        ctx.setLineDash([12, 8]);
+        ctx.lineDashOffset = -now * 0.05;
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#f59e0b'; // Gold Path Line
+        ctx.shadowColor = '#fbbf24';
+        ctx.shadowBlur = 15;
+        ctx.stroke();
+
+        ctx.setLineDash([6, 6]);
+        ctx.lineDashOffset = -now * 0.08;
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#fef08a';
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // B. Flowing Energy Pulse Dots Along Path
+        const pathDist = Math.hypot(targetSx - px, targetSy - py);
+        const particleCount = Math.max(3, Math.min(10, Math.floor(pathDist / 50)));
+        for (let i = 0; i < particleCount; i++) {
+          const progress = ((now * 0.0008 + i / particleCount) % 1);
+          const curX = px + (targetSx - px) * progress;
+          const curY = py + (targetSy - py) * progress;
+          ctx.beginPath();
+          ctx.arc(curX, curY, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#fef08a';
+          ctx.shadowColor = '#ef4444';
+          ctx.shadowBlur = 10;
+          ctx.fill();
+        }
+
+        // C. Target Ground Beacon Ring & Vertical Crimson Pillar
+        const ringRadius = Math.max(0, 22 + Math.sin(now * 0.008) * 5);
+        ctx.beginPath();
+        ctx.ellipse(targetSx, targetSy, ringRadius, ringRadius * 0.5, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#f43f5e';
+        ctx.shadowBlur = 18;
+        ctx.stroke();
+
+        // Light Pillar Beam
+        const beamGrad = ctx.createLinearGradient(targetSx, targetSy, targetSx, targetSy - 75);
+        beamGrad.addColorStop(0, 'rgba(239, 68, 68, 0.5)');
+        beamGrad.addColorStop(0.5, 'rgba(245, 158, 11, 0.25)');
+        beamGrad.addColorStop(1, 'rgba(254, 240, 138, 0)');
+        ctx.fillStyle = beamGrad;
+        ctx.fillRect(targetSx - 14, targetSy - 75, 28, 75);
+
+        // Target Pin Badge
+        const pinBobY = Math.sin(now * 0.006) * 5;
+        const pinY = targetSy - 70 + pinBobY;
+
+        ctx.beginPath();
+        ctx.arc(targetSx, pinY, 13, 0, Math.PI * 2);
+        ctx.fillStyle = '#dc2626';
+        ctx.fill();
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('🎯', targetSx, pinY);
+
+        // Target Text Banner
+        const labelText = `🎯 任务目标: ${nav.targetName}`;
+        ctx.font = 'bold 12px "Plus Jakarta Sans", system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        const textWidth = ctx.measureText(labelText).width;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.fillRect(targetSx - textWidth / 2 - 8, pinY - 26, textWidth + 16, 20);
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(targetSx - textWidth / 2 - 8, pinY - 26, textWidth + 16, 20);
+
+        ctx.fillStyle = '#fef08a';
+        ctx.fillText(labelText, targetSx, pinY - 16);
+
+        // D. Guidance Direction Arrow HUD Badge (Clamped to Screen Border or Near Player)
+        const distInTiles = Math.round(Math.hypot(nav.targetX - playerX, nav.targetY - playerY));
+        const angle = Math.atan2(targetSy - py, targetSx - px);
+        const margin = 55;
+        const isOffscreen = targetSx < margin || targetSx > width - margin || targetSy < margin || targetSy > height - margin;
+
+        let arrowX = targetSx;
+        let arrowY = targetSy;
+
+        if (isOffscreen) {
+          arrowX = Math.max(margin, Math.min(width - margin, targetSx));
+          arrowY = Math.max(margin, Math.min(height - margin, targetSy));
+        } else {
+          arrowX = px + Math.cos(angle) * 65;
+          arrowY = py + Math.sin(angle) * 65;
+        }
+
+        ctx.translate(arrowX, arrowY);
+
+        ctx.beginPath();
+        ctx.arc(0, 0, 20, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+        ctx.fill();
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#f59e0b';
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+
+        ctx.save();
+        ctx.rotate(angle);
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.moveTo(9, 0);
+        ctx.lineTo(-7, -6);
+        ctx.lineTo(-3, 0);
+        ctx.lineTo(-7, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        ctx.font = '900 10px sans-serif';
+        ctx.fillStyle = '#fbbf24';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${distInTiles}米`, 0, isOffscreen ? 28 : -26);
+
+        ctx.restore();
+      }
+
       // 6.5. Draw Screen-Center Combat Combo Number & Shockwave Flame Animation
       const combo = engine.comboCount;
       const showCenter = engine.character.combatDisplaySettings?.showCenterDamage ?? false;
@@ -1635,7 +3194,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
           }
 
           // A. Radiant Central Shockwave Aura Pulse
-          const waveRadius = 75 + Math.min(30, combo * 0.6);
+          const waveRadius = Math.max(0, 75 + Math.min(30, combo * 0.6));
           ctx.beginPath();
           ctx.ellipse(0, 0, waveRadius, waveRadius * 0.38, 0, 0, Math.PI * 2);
           ctx.fillStyle = `${glowColor}22`;
@@ -1645,7 +3204,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
 
           // Shockwave Expanding Ring on Fresh Hit
           if (isFreshHit) {
-            const shockRadius = (1 - timeElapsed / 220) * (waveRadius + 32);
+            const shockRadius = Math.max(0, (1 - timeElapsed / 220) * (waveRadius + 32));
             ctx.beginPath();
             ctx.ellipse(0, 0, shockRadius, shockRadius * 0.38, 0, 0, Math.PI * 2);
             ctx.strokeStyle = mainColor1;
@@ -1821,7 +3380,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
           ctx.fill();
         } else if (currentWeather === 'sandstorm') {
           ctx.beginPath();
-          ctx.ellipse(p.x, p.y, p.size * 2.8, p.size, 0, 0, Math.PI * 2);
+          ctx.ellipse(p.x, p.y, Math.max(0, p.size * 2.8), Math.max(0, p.size), 0, 0, Math.PI * 2);
           ctx.fillStyle = `rgba(251, 191, 36, ${p.alpha})`;
           ctx.fill();
         } else {
@@ -1836,6 +3395,140 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         }
       });
       ctx.restore();
+
+      // Check Proximity to Territory Bounds to Trigger Floating Banner on Foot Entry
+      if (map.guildTerritory) {
+        const bounds = map.guildTerritory.bounds;
+        const isInside = playerX >= bounds.minX && playerX <= bounds.maxX && playerY >= bounds.minY && playerY <= bounds.maxY;
+        if (isInside && !wasInsideTerritoryRef.current) {
+          engine.triggerTerritoryBanner();
+        }
+        wasInsideTerritoryRef.current = isInside;
+      } else {
+        wasInsideTerritoryRef.current = false;
+      }
+
+      // 8. Draw Sabak Battlefield Glassmorphism Floating Top Status Banner (漂浮动画, 7秒后滑出隐藏)
+      if (map.guildTerritory) {
+        const bannerAge = now - (engine.territoryBannerTime || 0);
+        const bannerDuration = 7000; // 7 seconds total duration
+
+        if (bannerAge >= 0 && bannerAge < bannerDuration) {
+          const sabakGuild = engine.sabakInfo?.guildName || '兄弟会';
+          const sabakLeader = engine.sabakInfo?.leaderName || '霸天战神';
+
+          // Slide & Fade Animation
+          let bannerY = 22;
+          let alpha = 1.0;
+
+          if (bannerAge < 800) {
+            // Slide down & Fade in
+            const t = bannerAge / 800;
+            const easeOut = 1 - Math.pow(1 - t, 3);
+            bannerY = -50 + easeOut * 72;
+            alpha = Math.min(1, t * 1.5);
+          } else if (bannerAge > 5600) {
+            // Slide up & Fade out
+            const t = (bannerAge - 5600) / 1400;
+            const easeIn = Math.pow(t, 2);
+            bannerY = 22 - easeIn * 70;
+            alpha = Math.max(0, 1 - t);
+          } else {
+            // Floating bounce
+            const floatOffset = Math.sin((bannerAge - 800) * 0.003) * 2;
+            bannerY = 22 + floatOffset;
+            alpha = 1.0;
+          }
+
+          ctx.save();
+          ctx.globalAlpha = alpha;
+
+          const titlePart = `👑 【${map.guildTerritory.name}】`;
+          const infoPart = `霸主行会: 《${sabakGuild}》 · 城主大天尊: ${sabakLeader}`;
+          const bannerText = `${titlePart}   ${infoPart}`;
+
+          ctx.font = 'bold 12px "Plus Jakarta Sans", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          const textWidth = ctx.measureText(bannerText).width;
+          const paddingX = 22;
+          const bannerWidth = textWidth + paddingX * 2;
+          const bannerHeight = 32;
+          const centerX = width / 2;
+          const bx = centerX - bannerWidth / 2;
+          const by = bannerY;
+
+          // A. Soft Golden Glow & Glassmorphism Container
+          ctx.beginPath();
+          if (typeof (ctx as any).roundRect === 'function') {
+            (ctx as any).roundRect(bx, by, bannerWidth, bannerHeight, 16);
+          } else {
+            ctx.rect(bx, by, bannerWidth, bannerHeight);
+          }
+
+          const glassGrad = ctx.createLinearGradient(bx, by, bx + bannerWidth, by + bannerHeight);
+          glassGrad.addColorStop(0, 'rgba(15, 23, 42, 0.88)');
+          glassGrad.addColorStop(0.5, 'rgba(45, 26, 14, 0.86)');
+          glassGrad.addColorStop(1, 'rgba(15, 23, 42, 0.88)');
+
+          ctx.fillStyle = glassGrad;
+          ctx.shadowColor = 'rgba(245, 158, 11, 0.55)';
+          ctx.shadowBlur = 18;
+          ctx.fill();
+
+          // Frosted Glass Reflection Border
+          const glassReflect = ctx.createLinearGradient(bx, by, bx + bannerWidth, by + bannerHeight);
+          glassReflect.addColorStop(0, 'rgba(254, 240, 138, 0.9)');
+          glassReflect.addColorStop(0.5, 'rgba(245, 158, 11, 0.6)');
+          glassReflect.addColorStop(1, 'rgba(254, 240, 138, 0.9)');
+
+          ctx.strokeStyle = glassReflect;
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+
+          // Animated Metallic Glass Sheen Streak
+          if (bannerAge >= 400 && bannerAge <= 5800) {
+            const sheenProgress = ((now % 2200) / 2200);
+            const sheenX = bx - 30 + sheenProgress * (bannerWidth + 60);
+
+            ctx.save();
+            ctx.clip();
+            ctx.beginPath();
+            ctx.moveTo(sheenX, by - 10);
+            ctx.lineTo(sheenX + 22, by - 10);
+            ctx.lineTo(sheenX - 10, by + bannerHeight + 10);
+            ctx.lineTo(sheenX - 32, by + bannerHeight + 10);
+            ctx.closePath();
+
+            const sheenGrad = ctx.createLinearGradient(sheenX - 20, by, sheenX + 15, by);
+            sheenGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+            sheenGrad.addColorStop(0.5, 'rgba(254, 240, 138, 0.38)');
+            sheenGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+            ctx.fillStyle = sheenGrad;
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // Gold Accent Side Jewels
+          ctx.beginPath();
+          ctx.arc(bx + 10, by + bannerHeight / 2, 3, 0, Math.PI * 2);
+          ctx.arc(bx + bannerWidth - 10, by + bannerHeight / 2, 3, 0, Math.PI * 2);
+          ctx.fillStyle = '#fef08a';
+          ctx.shadowColor = '#fbbf24';
+          ctx.shadowBlur = 8;
+          ctx.fill();
+
+          // High Contrast Gold Typography
+          ctx.fillStyle = '#fef08a';
+          ctx.shadowColor = '#d97706';
+          ctx.shadowBlur = 8;
+          ctx.fillText(bannerText, centerX, by + bannerHeight / 2);
+
+          ctx.restore();
+        }
+      }
 
       animId = requestAnimationFrame(render);
     };
@@ -1860,21 +3553,22 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
     const screenCenterX = width / 2;
     const screenCenterY = height / 2;
 
-    const playerX = engine.character.x;
-    const playerY = engine.character.y;
+    const camX = cameraPosRef.current ? cameraPosRef.current.x : engine.character.x;
+    const camY = cameraPosRef.current ? cameraPosRef.current.y : engine.character.y;
     const tileWidth = 60;
     const tileHeight = 30;
+
+    const camIsoX = (camX - camY) * (tileWidth / 2);
+    const camIsoY = (camX + camY) * (tileHeight / 2);
 
     // Check if clicked a monster
     for (const m of engine.monsters) {
       if (m.hp <= 0) continue;
       const isoX = (m.x - m.y) * (tileWidth / 2);
       const isoY = (m.x + m.y) * (tileHeight / 2);
-      const playerIsoX = (playerX - playerY) * (tileWidth / 2);
-      const playerIsoY = (playerX + playerY) * (tileHeight / 2);
 
-      const msx = screenCenterX + (isoX - playerIsoX);
-      const msy = screenCenterY + (isoY - playerIsoY);
+      const msx = screenCenterX + (isoX - camIsoX);
+      const msy = screenCenterY + (isoY - camIsoY);
 
       if (Math.hypot(clickX - msx, clickY - msy) < 25) {
         engine.targetMonsterId = m.id;
@@ -1888,11 +3582,8 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
     const dx = clickX - screenCenterX;
     const dy = clickY - screenCenterY;
 
-    const playerIsoX = (playerX - playerY) * (tileWidth / 2);
-    const playerIsoY = (playerX + playerY) * (tileHeight / 2);
-
-    const targetIsoX = playerIsoX + dx;
-    const targetIsoY = playerIsoY + dy;
+    const targetIsoX = camIsoX + dx;
+    const targetIsoY = camIsoY + dy;
 
     const targetGx = Math.round((targetIsoX / (tileWidth / 2) + targetIsoY / (tileHeight / 2)) / 2);
     const targetGy = Math.round((targetIsoY / (tileHeight / 2) - targetIsoX / (tileWidth / 2)) / 2);

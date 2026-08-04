@@ -54,6 +54,22 @@ export const MountModal: React.FC<MountModalProps> = ({ engine, onClose }) => {
     engine.toggleMount();
   };
 
+  const handleEquipMount = (tier: number) => {
+    if (tier <= mount.tier) {
+      mount.tier = tier;
+      mount.isMounted = true;
+      engine.recalculateStats();
+      const config = MOUNT_TIERS[tier];
+      engine.addParticle(
+        engine.character.x,
+        engine.character.y,
+        'text_gold',
+        `🐴 【骑乘上马】跨上 [${config?.name || '坐骑'}]，移速翻倍！`
+      );
+      engine.notify();
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 select-none">
       <div className="w-full max-w-3xl bg-slate-950 border-2 border-amber-600/70 rounded-3xl p-4 sm:p-6 relative shadow-[0_0_50px_rgba(245,158,11,0.25)] text-amber-100 max-h-[95vh] overflow-y-auto flex flex-col gap-4">
@@ -172,6 +188,30 @@ export const MountModal: React.FC<MountModalProps> = ({ engine, onClose }) => {
             <p className="z-10 text-[11px] text-slate-300 text-center px-2 leading-relaxed bg-slate-950/80 border border-amber-900/40 p-2 rounded-xl w-full">
               {activePreviewConfig.description}
             </p>
+
+            {/* Equip / Mount Selected Tier Button */}
+            <div className="w-full mt-2 z-10">
+              {isTierUnlocked ? (
+                <button
+                  onClick={() => handleEquipMount(previewTier)}
+                  className={`w-full py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md border transition-all ${
+                    mount.isMounted && mount.tier === previewTier
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 border-emerald-400 text-white shadow-emerald-900/50'
+                      : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:brightness-110 border-yellow-300 text-slate-950 cursor-pointer active:scale-95'
+                  }`}
+                >
+                  <span>
+                    {mount.isMounted && mount.tier === previewTier
+                      ? '✅ 正在骑乘中 (移速翻倍生效)'
+                      : `🐴 骑乘 [${activePreviewConfig.name}] (移速翻倍)`}
+                  </span>
+                </button>
+              ) : (
+                <div className="w-full py-2 px-3 rounded-xl font-bold text-xs bg-slate-950/80 border border-slate-800 text-slate-500 text-center flex items-center justify-center gap-1">
+                  <Lock className="w-3.5 h-3.5" /> 进阶升至 {previewTier}阶 解锁此坐骑
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right Column: Stats & Advancement Controls */}
@@ -237,7 +277,9 @@ export const MountModal: React.FC<MountModalProps> = ({ engine, onClose }) => {
                   <span className="text-slate-400 flex items-center gap-1">
                     <Zap className="w-3.5 h-3.5 text-yellow-400" /> 移动速度
                   </span>
-                  <span className="font-extrabold text-yellow-300">+{currentSpeedBonus}%</span>
+                  <span className="font-extrabold text-yellow-300">
+                    {mount.isMounted ? `⚡ 骑乘加速 (+${Math.round((engine.stats.moveSpeedBonus || 0) * 100)}%)` : `+${currentSpeedBonus}%`}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-1.5 rounded-lg border border-slate-800">

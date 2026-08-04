@@ -3,6 +3,7 @@ import { GameEngine } from '../../engine/GameEngine';
 import { EquipmentSlot, Item } from '../../types/game';
 import { X, Shield, Award, Sparkles, RefreshCw, Eye } from 'lucide-react';
 import { CharacterPreviewCanvas } from '../CharacterPreviewCanvas';
+import { LevelBadgeTag } from '../HUD/LevelBadgeTag';
 
 interface CharacterModalProps {
   engine: GameEngine;
@@ -129,14 +130,26 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
           <div className="flex items-center gap-3">
             <span className="text-3xl p-1.5 bg-slate-950 border border-amber-600/40 rounded-xl">⚔️</span>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg sm:text-xl font-bold text-amber-300">{engine.character.name}</h2>
+                <LevelBadgeTag level={engine.character.level} size="md" showName={true} />
                 <span className="px-2 py-0.5 text-xs font-extrabold bg-gradient-to-r from-amber-600 to-yellow-600 text-slate-950 rounded-md shadow-md border border-yellow-300">
                   {titleText}
                 </span>
-                <span className="text-xs text-amber-400 font-bold bg-amber-950 px-2 py-0.5 rounded border border-amber-800">
+                <span className="text-xs text-amber-400 font-bold bg-amber-950 px-2 py-0.5 rounded border border-amber-800 flex items-center gap-1">
+                  {engine.character.gender === 'female' ? '♀️ 女' : '♂️ 男'}
                   {engine.character.profession === 'warrior' ? '战士' : engine.character.profession === 'mage' ? '法师' : '道士'}
                 </span>
+                <button
+                  onClick={() => {
+                    engine.character.gender = engine.character.gender === 'female' ? 'male' : 'female';
+                    engine.notify();
+                  }}
+                  title="切换角色性别"
+                  className="text-[10px] text-amber-300 hover:text-amber-100 bg-amber-950/80 hover:bg-amber-900 px-2 py-0.5 rounded border border-amber-700 font-bold transition-all"
+                >
+                  🔄 换别: {engine.character.gender === 'female' ? '切换为男' : '切换为女'}
+                </button>
               </div>
               <p className="text-[11px] text-amber-500/90 mt-0.5">
                 等级: LV {engine.character.level} · 转生: {engine.character.rebirthLevel}转 · 功勋成就: 已解锁 {unlockedCount} 项

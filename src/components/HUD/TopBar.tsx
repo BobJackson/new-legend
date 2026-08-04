@@ -3,6 +3,7 @@ import { GameEngine } from '../../engine/GameEngine';
 import { MAP_DATABASE } from '../../data/maps';
 import { WEATHER_DATABASE } from '../../data/weather';
 import { Settings, Play, Pause, Coins, Gem, ShieldAlert, Award, Bot } from 'lucide-react';
+import { LevelBadgeTag } from './LevelBadgeTag';
 
 interface TopBarProps {
   engine: GameEngine;
@@ -30,9 +31,11 @@ export const TopBar: React.FC<TopBarProps> = ({ engine, onOpenModal, onToggleAut
         <div>
           <div className="flex items-center gap-2">
             <span className="font-bold text-sm text-amber-200">{engine.character.name}</span>
-            <span className="text-[10px] bg-amber-950/80 border border-amber-800 text-amber-400 px-1.5 py-0.5 rounded font-bold">
-              {engine.character.profession === 'warrior' ? '战士' : engine.character.profession === 'mage' ? '法师' : '道士'}
+            <span className="text-[10px] bg-amber-950/80 border border-amber-800 text-amber-400 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
+              <span>{engine.character.gender === 'female' ? '♀️' : '♂️'}</span>
+              <span>{engine.character.profession === 'warrior' ? '战士' : engine.character.profession === 'mage' ? '法师' : '道士'}</span>
             </span>
+            <LevelBadgeTag level={engine.character.level} size="sm" showName={true} />
           </div>
 
           <div className="flex items-center gap-2 text-xs mt-0.5">
@@ -46,8 +49,15 @@ export const TopBar: React.FC<TopBarProps> = ({ engine, onOpenModal, onToggleAut
 
       {/* Map Location, Weather & Safe Zone Badge */}
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2 bg-slate-900/80 border border-amber-900/50 px-3 py-1 rounded-full text-xs">
-          <span className="font-bold text-amber-300">📍 {map.name}</span>
+        <button
+          onClick={() => onOpenModal('portal')}
+          className="flex items-center gap-2 bg-slate-900/90 hover:bg-slate-800 border border-amber-500/50 hover:border-amber-400 px-3 py-1 rounded-full text-xs transition-all shadow-sm group"
+          title="点击打开全大陆传送阵名录"
+        >
+          <span className="font-bold text-amber-300 group-hover:text-amber-200">📍 {map.name}</span>
+          <span className="text-[10px] bg-blue-950 text-blue-300 border border-blue-800/80 px-1 py-0.2 rounded font-bold">
+            🌀 传送
+          </span>
           {map.isSafeZone ? (
             <span className="bg-emerald-950 text-emerald-400 text-[10px] px-1.5 py-0.5 rounded border border-emerald-800/60 font-bold">
               安全区
@@ -57,7 +67,7 @@ export const TopBar: React.FC<TopBarProps> = ({ engine, onOpenModal, onToggleAut
               <ShieldAlert className="w-3 h-3" /> 危险副本
             </span>
           )}
-        </div>
+        </button>
 
         {/* Global Weather Pill */}
         <button

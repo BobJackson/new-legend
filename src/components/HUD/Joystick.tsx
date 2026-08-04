@@ -8,7 +8,19 @@ interface JoystickProps {
 
 export const Joystick: React.FC<JoystickProps> = ({ engine }) => {
   const [activeDir, setActiveDir] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isSmallScreen = window.innerWidth < 768;
+      setIsMobile(hasTouch || isSmallScreen);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const move = (dx: number, dy: number) => {
     engine.moveCharacter(dx, dy);
@@ -38,8 +50,12 @@ export const Joystick: React.FC<JoystickProps> = ({ engine }) => {
     };
   }, []);
 
+  if (!isMobile) {
+    return null;
+  }
+
   return (
-    <div className="absolute bottom-16 left-3 z-20 select-none">
+    <div className="absolute bottom-16 left-3 z-20 select-none md:hidden">
       {/* Semi-transparent Circular Control Disc */}
       <div className="w-36 h-36 rounded-full bg-slate-950/35 backdrop-blur-xs border-2 border-amber-500/25 p-1.5 shadow-xl relative flex items-center justify-center opacity-65 hover:opacity-100 transition-opacity duration-300">
         

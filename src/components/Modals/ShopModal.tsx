@@ -33,19 +33,15 @@ export const ShopModal: React.FC<ShopModalProps> = ({ engine, onClose }) => {
       return;
     }
 
-    const emptyIdx = engine.character.inventory.findIndex(slot => slot === null);
-    if (emptyIdx < 0) {
-      engine.addParticle(engine.character.x, engine.character.y, 'text_info', '背包已满！');
-      return;
-    }
-
-    engine.character.ingot -= goods.priceIngot;
-    engine.character.inventory[emptyIdx] = {
+    const success = engine.addItemToInventory({
       ...goods.item,
       count: goods.count
-    };
+    });
 
-    engine.addParticle(engine.character.x, engine.character.y, 'text_gold', `【购买成功!】获得 ${goods.label}`);
+    if (success) {
+      engine.character.ingot -= goods.priceIngot;
+      engine.addParticle(engine.character.x, engine.character.y, 'text_gold', `【购买成功!】获得 ${goods.label}`);
+    }
   };
 
   return (

@@ -48,8 +48,11 @@ export const GuildModal: React.FC<GuildModalProps> = ({ engine, onClose }) => {
       .then(data => {
         if (data.success) {
           setSabakInfo(data.sabakLord);
+          engine.sabakInfo = data.sabakLord;
           engine.character.ingot += 500;
           engine.character.title = '沙城城主';
+          engine.character.isSabakLord = true;
+          engine.triggerTerritoryBanner();
           engine.addParticle(engine.character.x, engine.character.y, 'text_gold', '【占领沙巴克!】荣登沙城霸主，独享金币税收！');
         }
       })

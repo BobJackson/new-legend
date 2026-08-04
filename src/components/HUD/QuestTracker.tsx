@@ -230,15 +230,12 @@ export const QuestTracker: React.FC<QuestTrackerProps> = ({ engine }) => {
     engine.claimDailyQuestReward(questId);
   };
 
-  const handleNavigateToMap = (mapId?: string) => {
-    if (!mapId || !MAP_DATABASE[mapId]) return;
-    const map = MAP_DATABASE[mapId];
-    if (engine.character.level < map.reqLevel) {
-      engine.addParticle(engine.character.x, engine.character.y, 'text_info', `角色等级不足，需要 LV ${map.reqLevel}！`);
-      return;
+  const handleGoToTarget = (targetMapId?: string, targetMonsterId?: string, targetName?: string) => {
+    if (engine.questNavTarget && engine.questNavTarget.targetName === targetName) {
+      engine.stopQuestNavigation();
+    } else {
+      engine.startQuestNavigation(targetMapId || 'bichi_city', targetMonsterId, targetName);
     }
-    engine.changeMap(mapId, 10, 10);
-    engine.addParticle(10, 10, 'text_gold', `【任务寻路】传送至 ${map.name}`);
   };
 
   if (isCollapsed) {
@@ -363,15 +360,21 @@ export const QuestTracker: React.FC<QuestTrackerProps> = ({ engine }) => {
                   <span>完成任务 (领取奖励)</span>
                 </button>
               ) : (
-                currentMainQuest.targetMapId && (
-                  <button
-                    onClick={() => handleNavigateToMap(currentMainQuest?.targetMapId)}
-                    className="w-full py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-900/60 font-bold text-[11px] rounded-lg flex items-center justify-center gap-1 transition-all active:scale-95"
-                  >
-                    <Navigation className="w-3 h-3 text-amber-400" />
-                    <span>前往目标地图 ({MAP_DATABASE[currentMainQuest.targetMapId]?.name})</span>
-                  </button>
-                )
+                <button
+                  onClick={() => handleGoToTarget(currentMainQuest.targetMapId, currentMainQuest.targetMonsterId, currentMainQuest.targetName)}
+                  className={`w-full py-1.5 font-bold text-xs rounded-lg border flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-lg ${
+                    engine.questNavTarget && engine.questNavTarget.targetName === currentMainQuest.targetName
+                      ? 'bg-amber-500 text-slate-950 border-amber-300 animate-pulse'
+                      : 'bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 hover:border-amber-400 text-amber-200 border-amber-800/80'
+                  }`}
+                >
+                  <Navigation className={`w-3.5 h-3.5 ${engine.questNavTarget?.targetName === currentMainQuest.targetName ? 'text-slate-950 animate-spin' : 'text-amber-400'}`} />
+                  <span>
+                    {engine.questNavTarget && engine.questNavTarget.targetName === currentMainQuest.targetName
+                      ? `🎯 正在指引至 [${currentMainQuest.targetName}] (点击取消)`
+                      : `🎯 前往目标 (${currentMainQuest.targetName})`}
+                  </span>
+                </button>
               )}
             </div>
           ) : null}
@@ -410,7 +413,17 @@ export const QuestTracker: React.FC<QuestTrackerProps> = ({ engine }) => {
                     领奖
                   </button>
                 ) : (
-                  <span className="text-[10px] text-amber-500/80 font-semibold">进行中</span>
+                  <button
+                    onClick={() => handleGoToTarget(quest.targetMapId, quest.targetMonsterId, quest.targetName)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border flex items-center gap-1 transition-all active:scale-95 ${
+                      engine.questNavTarget && engine.questNavTarget.targetName === quest.targetName
+                        ? 'bg-amber-500 text-slate-950 border-amber-300'
+                        : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border-amber-800/60'
+                    }`}
+                  >
+                    <Navigation className="w-2.5 h-2.5 text-amber-400" />
+                    <span>{engine.questNavTarget && engine.questNavTarget.targetName === quest.targetName ? '取消指引' : '前往目标'}</span>
+                  </button>
                 )}
               </div>
             </div>

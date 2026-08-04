@@ -23,6 +23,27 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
       { itemId: 'armor_cloth_shirt', chance: 0.3 }
     ]
   },
+  'scarecrow': {
+    name: '稻草人',
+    level: 2,
+    maxHp: 45,
+    physAtk: 6,
+    physDef: 2,
+    magDef: 1,
+    expReward: 25,
+    goldReward: 35,
+    isBoss: false,
+    color: '#ca8a04', // Straw Yellow
+    speed: 1.1,
+    attackRange: 1,
+    atkCooldownMs: 1400,
+    iconSymbol: '🌾',
+    drops: [
+      { itemId: 'weapon_wooden_sword', chance: 0.35 },
+      { itemId: 'armor_cloth_shirt', chance: 0.35 },
+      { itemId: 'potion_sun_water', chance: 0.15 }
+    ]
+  },
   'deer': {
     name: '野生温顺鹿',
     level: 3,
@@ -42,6 +63,27 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
       { itemId: 'weapon_ebony_sword', chance: 0.25 },
       { itemId: 'helmet_bronze', chance: 0.25 },
       { itemId: 'potion_sun_water', chance: 0.1 }
+    ]
+  },
+  'snake': {
+    name: '毒蛇',
+    level: 6,
+    maxHp: 120,
+    physAtk: 14,
+    physDef: 4,
+    magDef: 3,
+    expReward: 70,
+    goldReward: 100,
+    isBoss: false,
+    color: '#16a34a', // Green
+    speed: 1.6,
+    attackRange: 1,
+    atkCooldownMs: 1200,
+    iconSymbol: '🐍',
+    drops: [
+      { itemId: 'weapon_ebony_sword', chance: 0.25 },
+      { itemId: 'potion_sun_water', chance: 0.25 },
+      { itemId: 'black_iron_ore', chance: 0.1 }
     ]
   },
   'hook_cat': {

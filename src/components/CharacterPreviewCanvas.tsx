@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { CharacterData, EquipmentSlot, Item } from '../types/game';
+import { drawCharacterAvatar } from '../utils/characterRenderer';
 
 interface CharacterPreviewCanvasProps {
   character: CharacterData;
@@ -17,6 +18,7 @@ export const CharacterPreviewCanvas: React.FC<CharacterPreviewCanvasProps> = ({
   className = ''
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [actionState, setActionState] = React.useState<'idle' | 'walk' | 'attack'>('idle');
 
   useEffect(() => {
     let animId: number;
@@ -203,269 +205,17 @@ export const CharacterPreviewCanvas: React.FC<CharacterPreviewCanvasProps> = ({
         ctx.restore();
       }
 
-      // D. Full Body Figure & Armor
-      const armorItem = previewEquipment.armor;
-      const helmetItem = previewEquipment.helmet;
-      const weaponItem = previewEquipment.weapon;
-
-      let armorColorPrimary = '#475569';
-      let armorColorSecondary = '#1e293b';
-      let armorTrimColor = '#94a3b8';
-      let armorGlowColor = '#64748b';
-
-      if (armorItem) {
-        if (armorItem.rarity === 'legendary' || armorItem.rarity === 'mythic') {
-          armorColorPrimary = '#b91c1c';
-          armorColorSecondary = '#7f1d1d';
-          armorTrimColor = '#f59e0b';
-          armorGlowColor = '#ef4444';
-        } else if (armorItem.rarity === 'epic') {
-          armorColorPrimary = '#6b21a8';
-          armorColorSecondary = '#4c1d95';
-          armorTrimColor = '#c084fc';
-          armorGlowColor = '#a855f7';
-        } else if (armorItem.rarity === 'rare') {
-          armorColorPrimary = '#1e40af';
-          armorColorSecondary = '#1e3a8a';
-          armorTrimColor = '#60a5fa';
-          armorGlowColor = '#3b82f6';
-        } else {
-          armorColorPrimary = '#334155';
-          armorColorSecondary = '#0f172a';
-          armorTrimColor = '#e2e8f0';
-          armorGlowColor = '#94a3b8';
-        }
-      } else {
-        if (prof === 'warrior') {
-          armorColorPrimary = '#854d0e';
-          armorColorSecondary = '#451a03';
-          armorTrimColor = '#f59e0b';
-          armorGlowColor = '#d97706';
-        } else if (prof === 'mage') {
-          armorColorPrimary = '#3730a3';
-          armorColorSecondary = '#1e1b4b';
-          armorTrimColor = '#a5b4fc';
-          armorGlowColor = '#6366f1';
-        } else {
-          armorColorPrimary = '#065f46';
-          armorColorSecondary = '#022c22';
-          armorTrimColor = '#6ee7b7';
-          armorGlowColor = '#10b981';
-        }
-      }
-
-      ctx.save();
-
-      // Boots / Legs
-      ctx.fillStyle = armorColorSecondary;
-      ctx.fillRect(px - 7, playerCenterY + 8, 5, 12);
-      ctx.fillRect(px + 2, playerCenterY + 8, 5, 12);
-
-      ctx.fillStyle = armorTrimColor;
-      ctx.fillRect(px - 8, playerCenterY + 16, 6, 4);
-      ctx.fillRect(px + 2, playerCenterY + 16, 6, 4);
-
-      // Torso / Robe / Chestplate
-      ctx.beginPath();
-      if (prof === 'mage' || prof === 'taoist') {
-        ctx.moveTo(px - 9, playerCenterY - 10);
-        ctx.lineTo(px + 9, playerCenterY - 10);
-        ctx.lineTo(px + 12, playerCenterY + 14);
-        ctx.lineTo(px - 12, playerCenterY + 14);
-      } else {
-        ctx.moveTo(px - 11, playerCenterY - 12);
-        ctx.lineTo(px + 11, playerCenterY - 12);
-        ctx.lineTo(px + 8, playerCenterY + 10);
-        ctx.lineTo(px - 8, playerCenterY + 10);
-      }
-      ctx.closePath();
-
-      const chestGrad = ctx.createLinearGradient(px - 10, playerCenterY - 10, px + 10, playerCenterY + 10);
-      chestGrad.addColorStop(0, armorColorPrimary);
-      chestGrad.addColorStop(1, armorColorSecondary);
-      ctx.fillStyle = chestGrad;
-      ctx.fill();
-
-      ctx.strokeStyle = armorTrimColor;
-      ctx.lineWidth = 1.5;
-      ctx.shadowColor = armorGlowColor;
-      ctx.shadowBlur = 6;
-      ctx.stroke();
-
-      // Belt
-      ctx.fillStyle = '#f59e0b';
-      ctx.fillRect(px - 9, playerCenterY + 2, 18, 3.5);
-      ctx.fillStyle = '#fef08a';
-      ctx.fillRect(px - 3, playerCenterY + 1, 6, 5.5);
-
-      // Shoulder Pauldrons
-      ctx.beginPath();
-      ctx.arc(px - 12, playerCenterY - 8, 5.5, 0, Math.PI * 2);
-      ctx.arc(px + 12, playerCenterY - 8, 5.5, 0, Math.PI * 2);
-      ctx.fillStyle = armorTrimColor;
-      ctx.fill();
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      if (armorItem && (armorItem.rarity === 'epic' || armorItem.rarity === 'legendary' || armorItem.rarity === 'mythic')) {
-        ctx.beginPath();
-        ctx.moveTo(px - 16, playerCenterY - 14);
-        ctx.lineTo(px - 11, playerCenterY - 8);
-        ctx.lineTo(px - 14, playerCenterY - 4);
-        ctx.moveTo(px + 16, playerCenterY - 14);
-        ctx.lineTo(px + 11, playerCenterY - 8);
-        ctx.lineTo(px + 14, playerCenterY - 4);
-        ctx.fillStyle = '#f59e0b';
-        ctx.fill();
-      }
-
-      // Head, Hair & Helmet
-      const headY = playerCenterY - 20;
-
-      if (helmetItem) {
-        ctx.beginPath();
-        ctx.arc(px, headY, 8, 0, Math.PI * 2);
-        ctx.fillStyle = armorColorPrimary;
-        ctx.fill();
-        ctx.strokeStyle = armorTrimColor;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(px, headY - 11);
-        ctx.lineTo(px - 4, headY - 6);
-        ctx.lineTo(px + 4, headY - 6);
-        ctx.fillStyle = '#ef4444';
-        ctx.fill();
-      } else {
-        ctx.beginPath();
-        ctx.arc(px, headY, 6.5, 0, Math.PI * 2);
-        ctx.fillStyle = '#fde047';
-        ctx.fill();
-
-        if (prof === 'warrior') {
-          ctx.fillStyle = '#ef4444';
-          ctx.fillRect(px - 7, headY - 4, 14, 3);
-          ctx.beginPath();
-          ctx.arc(px, headY - 3, 7, Math.PI, Math.PI * 2);
-          ctx.fillStyle = '#1e293b';
-          ctx.fill();
-        } else if (prof === 'mage') {
-          ctx.beginPath();
-          ctx.arc(px, headY - 1, 8.5, Math.PI * 0.8, Math.PI * 2.2);
-          ctx.fillStyle = '#312e81';
-          ctx.fill();
-          ctx.strokeStyle = '#a5b4fc';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        } else {
-          ctx.beginPath();
-          ctx.arc(px, headY - 7, 3.5, 0, Math.PI * 2);
-          ctx.fillStyle = '#064e3b';
-          ctx.fill();
-          ctx.fillStyle = '#34d399';
-          ctx.fillRect(px - 6, headY - 7, 12, 1.5);
-        }
-      }
-
-      // Handheld Weapon
-      const weaponX = px + 16;
-      const weaponY = playerCenterY - 6;
-
-      ctx.save();
-      ctx.translate(weaponX, weaponY);
-
-      if (prof === 'warrior') {
-        ctx.rotate(-0.4);
-        const wName = weaponItem?.name || '';
-        const isDragonSlayer = wName.includes('屠龙') || wName.includes('裁决') || wName.includes('怒斩') || weaponItem?.rarity === 'legendary' || weaponItem?.rarity === 'mythic';
-
-        if (isDragonSlayer) {
-          ctx.fillStyle = '#f59e0b';
-          ctx.fillRect(-3, -28, 7, 26);
-          ctx.fillStyle = '#fef08a';
-          ctx.fillRect(-1, -26, 3, 22);
-          ctx.fillStyle = '#dc2626';
-          ctx.fillRect(-6, -4, 13, 5);
-
-          ctx.shadowColor = '#ef4444';
-          ctx.shadowBlur = 15;
-          ctx.strokeStyle = '#f97316';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(-4, -29, 9, 28);
-        } else {
-          ctx.fillStyle = '#cbd5e1';
-          ctx.fillRect(-2, -22, 4, 20);
-          ctx.fillStyle = '#94a3b8';
-          ctx.fillRect(-4, -3, 9, 3);
-        }
-
-        ctx.font = '10px sans-serif';
-        ctx.fillText('✨', -2, -28);
-
-      } else if (prof === 'mage') {
-        ctx.rotate(-0.15);
-        const mName = weaponItem?.name || '';
-        const isBoneJade = mName.includes('骨玉') || mName.includes('嗜魂') || mName.includes('镇天') || weaponItem?.rarity === 'legendary' || weaponItem?.rarity === 'mythic';
-
-        ctx.fillStyle = isBoneJade ? '#f8fafc' : '#78350f';
-        ctx.fillRect(-1.5, -30, 3, 34);
-
-        ctx.beginPath();
-        ctx.arc(0, -32, isBoneJade ? 6 : 4.5, 0, Math.PI * 2);
-        ctx.fillStyle = isBoneJade ? '#a855f7' : '#38bdf8';
-        ctx.shadowColor = isBoneJade ? '#c084fc' : '#60a5fa';
-        ctx.shadowBlur = 14;
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        const orbAngle = now * 0.006;
-        const ox = Math.cos(orbAngle) * 9;
-        const oy = -32 + Math.sin(orbAngle) * 5;
-        ctx.beginPath();
-        ctx.arc(ox, oy, 2, 0, Math.PI * 2);
-        ctx.fillStyle = '#fef08a';
-        ctx.fill();
-
-      } else {
-        ctx.rotate(-0.25);
-        const tName = weaponItem?.name || '';
-        const isFan = tName.includes('扇') || tName.includes('逍遥');
-
-        if (isFan) {
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.lineTo(-12, -24);
-          ctx.quadraticCurveTo(0, -32, 12, -24);
-          ctx.closePath();
-          ctx.fillStyle = '#fef08a';
-          ctx.shadowColor = '#10b981';
-          ctx.shadowBlur = 10;
-          ctx.fill();
-          ctx.strokeStyle = '#d97706';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = '#34d399';
-          ctx.fillRect(-1.5, -24, 3, 22);
-          ctx.fillStyle = '#f59e0b';
-          ctx.fillRect(-4, -3, 9, 3);
-          ctx.shadowColor = '#6ee7b7';
-          ctx.shadowBlur = 10;
-        }
-
-        const charmY = -18 + Math.sin(now * 0.005) * 4;
-        ctx.fillStyle = '#ef4444';
-        ctx.fillRect(8, charmY, 5, 9);
-        ctx.fillStyle = '#fef08a';
-        ctx.fillRect(9.5, charmY + 2, 2, 5);
-      }
-
-      ctx.restore(); // Restore weapon
-      ctx.restore(); // Restore character
+      // D. Full Humanoid Character Avatar (统一画风与装备辨识度 + 动作帧切换)
+      drawCharacterAvatar({
+        ctx,
+        px,
+        py,
+        playerCenterY,
+        character,
+        previewEquipment,
+        now,
+        actionOverride: actionState === 'attack' ? (character.profession === 'warrior' ? 'attack' : 'cast') : actionState
+      });
 
       ctx.restore(); // Restore root canvas transform
 
@@ -477,7 +227,7 @@ export const CharacterPreviewCanvas: React.FC<CharacterPreviewCanvasProps> = ({
     return () => {
       cancelAnimationFrame(animId);
     };
-  }, [character, hoveredItem]);
+  }, [character, hoveredItem, actionState]);
 
   return (
     <div className={`relative flex flex-col items-center justify-center bg-slate-950/90 rounded-2xl border border-amber-900/50 p-2 shadow-inner ${className}`}>
@@ -496,9 +246,43 @@ export const CharacterPreviewCanvas: React.FC<CharacterPreviewCanvasProps> = ({
         </div>
       ) : (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-slate-900/80 border border-slate-700 text-slate-400 text-[10px] font-bold z-10 whitespace-nowrap">
-          ✨ 3D角色全貌 (悬停背包装备实时试穿)
+          ✨ 传奇像素艺术形态 (试穿装备)
         </div>
       )}
+
+      {/* Action Frame Switcher Controls */}
+      <div className="flex items-center gap-1.5 mt-2 z-10">
+        <button
+          onClick={() => setActionState('idle')}
+          className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
+            actionState === 'idle'
+              ? 'bg-amber-600 text-slate-950 shadow-md font-extrabold'
+              : 'bg-slate-900 text-amber-400/80 hover:bg-slate-800 border border-slate-800'
+          }`}
+        >
+          🌬️ 待机姿态
+        </button>
+        <button
+          onClick={() => setActionState('walk')}
+          className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
+            actionState === 'walk'
+              ? 'bg-amber-600 text-slate-950 shadow-md font-extrabold'
+              : 'bg-slate-900 text-amber-400/80 hover:bg-slate-800 border border-slate-800'
+          }`}
+        >
+          🏃 奔跑踏步
+        </button>
+        <button
+          onClick={() => setActionState('attack')}
+          className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
+            actionState === 'attack'
+              ? 'bg-amber-600 text-slate-950 shadow-md font-extrabold'
+              : 'bg-slate-900 text-amber-400/80 hover:bg-slate-800 border border-slate-800'
+          }`}
+        >
+          ⚔️ 斩击/施法
+        </button>
+      </div>
     </div>
   );
 };
