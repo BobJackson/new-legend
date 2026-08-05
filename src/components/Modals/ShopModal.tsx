@@ -14,6 +14,8 @@ export const ShopModal: React.FC<ShopModalProps> = ({ engine, onClose }) => {
     { item: ITEM_DATABASE['potion_sun_water'], priceIngot: 10, count: 10, label: '太阳水 x10' },
     { item: ITEM_DATABASE['blessing_oil'], priceIngot: 20, count: 3, label: '祝福油 x3' },
     { item: ITEM_DATABASE['black_iron_ore'], priceIngot: 15, count: 5, label: '黑铁矿石 x5' },
+    { item: ITEM_DATABASE['material_capture_rope'], priceIngot: 10, count: 5, label: '【宠物】捕兽索 x5' },
+    { item: ITEM_DATABASE['material_exp_fruit'], priceIngot: 20, count: 10, label: '【宠物】经验果 x10' },
     { item: ITEM_DATABASE['ring_paralysis'], priceIngot: 888, count: 1, label: '【神装】麻痹戒指' },
     { item: ITEM_DATABASE['ring_bodyguard'], priceIngot: 888, count: 1, label: '【神装】护身戒指' },
     { item: ITEM_DATABASE['ring_resurrection'], priceIngot: 999, count: 1, label: '【神装】复活戒指' }

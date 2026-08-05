@@ -1,3 +1,4 @@
+import { SET_BONUSES } from "../data/sets";
 import { 
   CharacterData, 
   Monster, 
@@ -19,6 +20,7 @@ import { MAIN_QUESTS, DAILY_QUESTS_TEMPLATES } from '../data/quests';
 import { ACHIEVEMENT_DATABASE } from '../data/achievements';
 import { WEATHER_DATABASE, WeatherType } from '../data/weather';
 import { MOUNT_TIERS } from '../data/mounts';
+import { SKILL_TEMPLATES } from '../data/skills';
 import { soundFX } from '../utils/sound';
 
 export class GameEngine {
@@ -40,10 +42,25 @@ export class GameEngine {
 
   public currentMapId: string = 'bichi_city';
   public targetMonsterId: string | null = null;
-  public isAutoBattling: boolean = false;
+  public autoPatrolTarget: { x: number; y: number } | null = null;
+  public lastAutoPatrolTime: number = 0;
+  public autoStuckCount: number = 0;
+  public unreachableMonsters: Map<string, number> = new Map();
+
+  public get isAutoBattling(): boolean {
+    return !!this.character?.autoBattleSettings?.enabled;
+  }
+  public set isAutoBattling(val: boolean) {
+    this.initAutoSettings();
+    if (this.character?.autoBattleSettings) {
+      this.character.autoBattleSettings.enabled = val;
+    }
+  }
+
   public lastAutoAtkTime: number = 0;
   public resurrectionCooldownEnd: number = 0;
   public lastPortalTime: number = 0;
+  public aegisShieldUntil: number = 0;
 
   public sabakInfo: { guildName: string; leaderName: string; taxGold?: number } = {
     guildName: '兄弟会',
@@ -85,6 +102,15 @@ export class GameEngine {
 
     if (map.obstacles) {
       for (const obs of map.obstacles) {
+        // Non-blocking passable environmental elements
+        if (
+          obs.type === 'water' ||
+          obs.type === 'puddle' ||
+          obs.type === 'bush' ||
+          obs.type === 'grass' ||
+          obs.passable
+        ) continue;
+
         const w = obs.width || 1;
         const h = obs.height || 1;
         // Bounding box with 0.4 tile player radius padding
@@ -97,6 +123,103 @@ export class GameEngine {
     return false;
   }
 
+  // Determine ground surface material for footstep audio synthesis
+  public getTerrainType(x: number, y: number): 'grass' | 'gravel' | 'water' | 'stone' {
+    const map = MAP_DATABASE[this.currentMapId];
+    if (!map) return 'grass';
+
+    // 1. Check if on/near puddle or water obstacle
+    if (map.obstacles) {
+      for (const obs of map.obstacles) {
+        if (obs.type === 'water' || obs.type === 'puddle') {
+          const w = obs.width || 1;
+          const h = obs.height || 1;
+          if (x >= obs.x - 0.6 && x <= obs.x + w + 0.6 &&
+              y >= obs.y - 0.6 && y <= obs.y + h + 0.6) {
+            return 'water';
+          }
+        }
+      }
+    }
+
+    // 2. Map theme defaults & structural proximity
+    const theme = map.theme;
+    if (theme === 'stone_tomb' || theme === 'zuma_temple' || theme === 'sabak_castle' || theme === 'red_moon') {
+      return 'stone';
+    }
+
+    if (theme === 'snake_valley') {
+      // Check if near rocks or gravel outcrops
+      if (map.obstacles) {
+        for (const obs of map.obstacles) {
+          if (obs.type === 'rock') {
+            const dist = Math.hypot(x - obs.x, y - obs.y);
+            if (dist <= 2.2) return 'gravel';
+          }
+        }
+      }
+      return 'gravel';
+    }
+
+    // For open fields (e.g. bichi_city): check proximity to stone pavements or rock outcrops
+    if (map.obstacles) {
+      for (const obs of map.obstacles) {
+        if (obs.type === 'statue' || obs.type === 'pillar' || obs.type === 'wall' || obs.type === 'ruins') {
+          const dist = Math.hypot(x - obs.x, y - obs.y);
+          if (dist <= 1.8) return 'stone';
+        } else if (obs.type === 'rock') {
+          const dist = Math.hypot(x - obs.x, y - obs.y);
+          if (dist <= 1.8) return 'gravel';
+        }
+      }
+    }
+
+    return 'grass';
+  }
+
+  // Check physical interaction triggers for environmental decorations (bushes, tall grass, puddles, torches, crystals)
+  public checkEnvironmentInteraction(x: number, y: number) {
+    const map = MAP_DATABASE[this.currentMapId];
+    if (!map || !map.obstacles) return;
+
+    for (const obs of map.obstacles) {
+      const w = obs.width || 1;
+      const h = obs.height || 1;
+      const cx = obs.x + w / 2;
+      const cy = obs.y + h / 2;
+      const dist = Math.hypot(x - cx, y - cy);
+
+      if (obs.type === 'bush' || obs.type === 'grass') {
+        if (dist <= 0.85) {
+          soundFX.playDecorationTrigger('bush');
+        }
+      } else if (obs.type === 'puddle' || obs.type === 'water') {
+        if (dist <= 0.75) {
+          soundFX.playDecorationTrigger('puddle');
+        }
+      } else if (obs.type === 'torch' || obs.type === 'crystal') {
+        if (dist <= 0.9) {
+          soundFX.playDecorationTrigger(obs.type);
+        }
+      }
+    }
+  }
+
+  // Unified movement notification & physical audio processing
+  public onPlayerMoved(oldX: number, oldY: number, isRunning: boolean = false) {
+    const hasMoved = this.character.x !== oldX || this.character.y !== oldY;
+    if (hasMoved) {
+      const isMounted = !!this.character.mount?.isMounted;
+      const terrainType = this.getTerrainType(this.character.x, this.character.y);
+      
+      // Play terrain-aware footstep & equipment response
+      soundFX.playPlayerFootstep(isRunning, isMounted, this.getArmorClass(), terrainType);
+
+      // Trigger physical decoration interaction feedback
+      this.checkEnvironmentInteraction(this.character.x, this.character.y);
+    }
+  }
+
   // Smooth navigation towards target with obstacle steering
   public stepTowards(tx: number, ty: number, stepSize: number = 0.055): boolean {
     const dx = tx - this.character.x;
@@ -104,6 +227,9 @@ export class GameEngine {
     const dist = Math.hypot(dx, dy);
 
     if (dist <= 0.25) return true; // Reached target
+
+    const oldX = this.character.x;
+    const oldY = this.character.y;
 
     const actualStep = Math.min(stepSize, dist);
     const baseAngle = Math.atan2(dy, dx);
@@ -114,9 +240,11 @@ export class GameEngine {
       Math.PI / 6, -Math.PI / 6,
       Math.PI / 3, -Math.PI / 3,
       Math.PI / 2, -Math.PI / 2,
-      (2 * Math.PI) / 3, -(2 * Math.PI) / 3
+      (2 * Math.PI) / 3, -(2 * Math.PI) / 3,
+      (3 * Math.PI) / 4, -(3 * Math.PI) / 4
     ];
 
+    let moved = false;
     for (const offset of angleOffsets) {
       const angle = baseAngle + offset;
       const nx = this.character.x + Math.cos(angle) * actualStep;
@@ -125,21 +253,28 @@ export class GameEngine {
       if (!this.isTileBlocked(nx, ny)) {
         this.character.x = nx;
         this.character.y = ny;
-        return false;
+        moved = true;
+        break;
       }
     }
 
-    // Fallback: try wall sliding on X or Y alone
-    const tryX = this.character.x + Math.sign(dx) * actualStep * 0.7;
-    if (!this.isTileBlocked(tryX, this.character.y)) {
-      this.character.x = tryX;
-      return false;
+    if (!moved) {
+      // Fallback: try wall sliding on X or Y alone
+      const tryX = this.character.x + Math.sign(dx) * actualStep * 0.7;
+      if (!this.isTileBlocked(tryX, this.character.y)) {
+        this.character.x = tryX;
+        moved = true;
+      } else {
+        const tryY = this.character.y + Math.sign(dy) * actualStep * 0.7;
+        if (!this.isTileBlocked(this.character.x, tryY)) {
+          this.character.y = tryY;
+          moved = true;
+        }
+      }
     }
 
-    const tryY = this.character.y + Math.sign(dy) * actualStep * 0.7;
-    if (!this.isTileBlocked(this.character.x, tryY)) {
-      this.character.y = tryY;
-      return false;
+    if (moved) {
+      this.onPlayerMoved(oldX, oldY, stepSize > 0.065);
     }
 
     return false;
@@ -310,9 +445,45 @@ export class GameEngine {
     this.initAutoSettings();
     this.initCombatDisplaySettings();
     this.currentMapId = characterData.currentMapId || 'bichi_city';
+    
+    const mapTheme = MAP_DATABASE[this.currentMapId]?.theme;
+    if (mapTheme === 'stone_tomb' || mapTheme === 'red_moon') {
+      this.currentWeather = Math.random() > 0.5 ? 'thunder' : 'snow';
+    } else if (mapTheme === 'snake_valley') {
+      this.currentWeather = Math.random() > 0.5 ? 'rain' : 'sandstorm';
+    } else if (mapTheme === 'sabak_castle') {
+      this.currentWeather = 'sandstorm';
+    } else {
+      this.currentWeather = 'sunny';
+    }
+
+    this.syncClassSkills();
     this.recalculateStats();
     this.spawnMonstersForMap(this.currentMapId);
     this.refreshSabakInfo();
+  }
+
+  public syncClassSkills() {
+    if (!this.character || !this.character.skills) return;
+    const profSkills = SKILL_TEMPLATES.filter(s => s.profession === this.character.profession);
+    profSkills.forEach(tmpl => {
+      const existing = this.character.skills.find(s => s.id === tmpl.id);
+      if (!existing) {
+        this.character.skills.push({ ...tmpl });
+      } else {
+        // Update skill data to latest template values
+        existing.description = tmpl.description;
+        existing.damageRatio = tmpl.damageRatio;
+        existing.isPassive = tmpl.isPassive;
+        existing.range = tmpl.range;
+        existing.aoeRadius = tmpl.aoeRadius;
+        existing.reqLevel = tmpl.reqLevel;
+        existing.particleType = tmpl.particleType;
+      }
+      if (!this.character.equippedSkills.includes(tmpl.id)) {
+        this.character.equippedSkills.push(tmpl.id);
+      }
+    });
   }
 
   public initCombatDisplaySettings() {
@@ -446,6 +617,9 @@ export class GameEngine {
     const len = Math.hypot(dx, dy);
     if (len === 0) return;
 
+    const oldX = this.character.x;
+    const oldY = this.character.y;
+
     const nx = this.character.x + (dx / len) * stepMagnitude;
     const ny = this.character.y + (dy / len) * stepMagnitude;
 
@@ -464,6 +638,7 @@ export class GameEngine {
       }
     }
 
+    this.onPlayerMoved(oldX, oldY, speedMult > 1.2);
     this.notify();
   }
 
@@ -664,10 +839,7 @@ export class GameEngine {
     if (template.rewardIngot) this.character.ingot += template.rewardIngot;
 
     if (template.rewardItemName) {
-      const emptyIdx = this.character.inventory.findIndex(s => s === null);
-      if (emptyIdx >= 0) {
-        this.character.inventory[emptyIdx] = { ...ITEM_DATABASE['blessing_oil'], count: 1 };
-      }
+      this.addItemToInventory({ ...ITEM_DATABASE['blessing_oil'], count: 1 });
     }
 
     qData.currentMainQuestIndex += 1;
@@ -891,6 +1063,100 @@ export class GameEngine {
     this.notify();
   }
 
+  public quickEquipPrompt: Item | null = null;
+  
+  public calculateItemScore(item: Item): number {
+    if (!item) return 0;
+    let score = 0;
+    if (item.hpBonus) score += item.hpBonus * 0.5;
+    if (item.mpBonus) score += item.mpBonus * 0.2;
+    
+    const pAtk = item.physAtkMax || 0;
+    const mAtk = item.magAtkMax || 0;
+    const tAtk = item.taoAtkMax || 0;
+    score += Math.max(pAtk, mAtk, tAtk) * 15;
+    
+    const pDef = item.physDef || 0;
+    const mDef = item.magDef || 0;
+    score += (pDef + mDef) * 10;
+    
+    if (item.critChance) score += item.critChance * 1000;
+    if ((item as any).luck) score += (item as any).luck * 50;
+    if ((item as any).moveSpeedBonus) score += (item as any).moveSpeedBonus * 500;
+    
+    score += (item.refineLevel || 0) * 20;
+    const rarityBonus: Record<string, number> = { common: 0, rare: 10, epic: 20, legendary: 50, mythic: 100 };
+    score += rarityBonus[item.rarity || 'common'] || 0;
+    return score;
+  }
+
+  public clearQuickEquipPrompt = () => {
+    this.quickEquipPrompt = null;
+    this.notify();
+  };
+
+  public getCandidateSlotsForItem(item: Item): import('../types/game').EquipmentSlot[] {
+    if (item.type === 'bracelet') {
+      return ['braceletLeft', 'braceletRight'];
+    }
+    if (item.type === 'ring' || item.type === 'special_ring') {
+      return ['ringLeft', 'ringRight'];
+    }
+    if (item.slot) {
+      return [item.slot];
+    }
+    return [];
+  }
+
+  public getBestTargetSlotForItem(item: Item): { targetSlot: import('../types/game').EquipmentSlot | null; isBetter: boolean } {
+    if (item.reqLevel && this.character.level < item.reqLevel) {
+      return { targetSlot: null, isBetter: false };
+    }
+    if (item.reqProfession && this.character.profession !== item.reqProfession) {
+      return { targetSlot: null, isBetter: false };
+    }
+
+    const candidateSlots = this.getCandidateSlotsForItem(item);
+    if (candidateSlots.length === 0) {
+      return { targetSlot: null, isBetter: false };
+    }
+
+    // 1. First priority: check if ANY candidate slot is currently empty
+    for (const slot of candidateSlots) {
+      if (!this.character.equipment[slot]) {
+        return { targetSlot: slot, isBetter: true };
+      }
+    }
+
+    // 2. Second priority: all candidate slots are filled, find the one with lowest score
+    const newItemScore = this.calculateItemScore(item);
+    let minScore = Infinity;
+    let minSlot = candidateSlots[0];
+
+    for (const slot of candidateSlots) {
+      const equipped = this.character.equipment[slot];
+      const score = equipped ? this.calculateItemScore(equipped) : 0;
+      if (score < minScore) {
+        minScore = score;
+        minSlot = slot;
+      }
+    }
+
+    if (newItemScore > minScore) {
+      return { targetSlot: minSlot, isBetter: true };
+    }
+
+    return { targetSlot: candidateSlots[0], isBetter: false };
+  }
+
+  public checkQuickEquip(item: Item) {
+    const { targetSlot, isBetter } = this.getBestTargetSlotForItem(item);
+    if (isBetter && targetSlot) {
+      this.quickEquipPrompt = { ...item, slot: targetSlot };
+      this.notify();
+    }
+  }
+
   public addItemToInventory(item: Item): boolean {
     // 1. Try to stack with existing consumable/material item
     const isStackable = !item.slot || item.type === 'potion' || item.type === 'material' || item.type === 'book';
@@ -937,6 +1203,29 @@ export class GameEngine {
     };
   }
 
+  
+  public getActiveSets(): import('../types/game').SetBonus[] {
+    const setCounts: Record<string, number> = {};
+    for (const key of Object.keys(this.character.equipment)) {
+      const slot = key as import('../types/game').EquipmentSlot;
+      const item = this.character.equipment[slot];
+      if (item && item.setId) {
+        setCounts[item.setId] = (setCounts[item.setId] || 0) + 1;
+      }
+    }
+    
+    const activeSets: import('../types/game').SetBonus[] = [];
+    for (const [setId, count] of Object.entries(setCounts)) {
+      const bonuses = SET_BONUSES[setId];
+      if (bonuses) {
+        if (count >= bonuses.requiredPieces) {
+          activeSets.push(bonuses);
+        }
+      }
+    }
+    return activeSets;
+  }
+
   public notify() {
     this.onStateChangeCallbacks.forEach(cb => cb());
   }
@@ -945,20 +1234,27 @@ export class GameEngine {
     const prof = PROFESSIONS[this.character.profession];
     const lvl = this.character.level;
 
-    let baseHp = prof.baseHp + (lvl - 1) * prof.hpPerLevel + (this.character.wingLevel * 100);
-    let baseMp = prof.baseMp + (lvl - 1) * prof.mpPerLevel + (this.character.wingLevel * 50);
+    
+    let baseHp = prof.baseHp + (lvl - 1) * prof.hpPerLevel;
+    let baseMp = prof.baseMp + (lvl - 1) * prof.mpPerLevel;
 
-    let physMin = prof.basePhysAtk[0] + Math.floor((lvl - 1) * 1.5);
-    let physMax = prof.basePhysAtk[1] + Math.floor((lvl - 1) * 2.5);
-    let magMin = prof.baseMagAtk[0] + Math.floor((lvl - 1) * 1.5);
-    let magMax = prof.baseMagAtk[1] + Math.floor((lvl - 1) * 2.5);
-    let taoMin = prof.baseTaoAtk[0] + Math.floor((lvl - 1) * 1.5);
-    let taoMax = prof.baseTaoAtk[1] + Math.floor((lvl - 1) * 2.5);
+    // Wing Stats Calculation
+    const wingLvl = this.character.wingLevel || 0;
+    const wingTier = Math.floor(wingLvl / 10);
+    baseHp += wingLvl * 100 + wingTier * 1000;
+    baseMp += wingLvl * 50 + wingTier * 500;
 
-    let physDef = prof.baseDef + Math.floor((lvl - 1) * 1.0);
-    let magDef = prof.baseMagDef + Math.floor((lvl - 1) * 0.8);
-    let crit = 0.05;
-    let luck = 0;
+    let physMin = prof.basePhysAtk[0] + Math.floor((lvl - 1) * 1.5) + wingLvl * 2 + wingTier * 25;
+    let physMax = prof.basePhysAtk[1] + Math.floor((lvl - 1) * 2.5) + wingLvl * 5 + wingTier * 60;
+    let magMin = prof.baseMagAtk[0] + Math.floor((lvl - 1) * 1.5) + wingLvl * 2 + wingTier * 25;
+    let magMax = prof.baseMagAtk[1] + Math.floor((lvl - 1) * 2.5) + wingLvl * 5 + wingTier * 60;
+    let taoMin = prof.baseTaoAtk[0] + Math.floor((lvl - 1) * 1.5) + wingLvl * 2 + wingTier * 25;
+    let taoMax = prof.baseTaoAtk[1] + Math.floor((lvl - 1) * 2.5) + wingLvl * 5 + wingTier * 60;
+    let physDef = prof.baseDef + Math.floor((lvl - 1) * 1.0) + wingLvl * 1 + wingTier * 15;
+    let magDef = prof.baseMagDef + Math.floor((lvl - 1) * 0.8) + wingLvl * 1 + wingTier * 15;
+    let crit = 0.05 + wingTier * 0.01; // 1% extra crit per tier
+    let luck = 0 + Math.floor(wingTier / 2); // 1 extra luck per 2 tiers
+
 
     // Add Equipment bonuses
     const slots: EquipmentSlot[] = [
@@ -996,6 +1292,20 @@ export class GameEngine {
         }
       }
     });
+
+    
+    // Add Set Bonuses
+    const activeSets = this.getActiveSets();
+    for (const setBonus of activeSets) {
+      if (setBonus.physAtkBonus) { physMin += setBonus.physAtkBonus; physMax += setBonus.physAtkBonus; }
+      if (setBonus.magAtkBonus) { magMin += setBonus.magAtkBonus; magMax += setBonus.magAtkBonus; }
+      if (setBonus.taoAtkBonus) { taoMin += setBonus.taoAtkBonus; taoMax += setBonus.taoAtkBonus; }
+      if (setBonus.physDefBonus) { physDef += setBonus.physDefBonus; }
+      if (setBonus.magDefBonus) { magDef += setBonus.magDefBonus; }
+      if (setBonus.hpBonus) { baseHp += setBonus.hpBonus; }
+      if (setBonus.mpBonus) { baseMp += setBonus.mpBonus; }
+      if (setBonus.critChanceBonus) { crit += setBonus.critChanceBonus; }
+    }
 
     // Add Achievement & Title Stat Bonuses
     this.initAchievementData();
@@ -1148,6 +1458,17 @@ export class GameEngine {
     this.currentMapId = newMapId;
     this.character.currentMapId = newMapId;
 
+    // Dynamically trigger weather based on map region
+    if (map.theme === 'stone_tomb' || map.theme === 'red_moon') {
+      this.setWeather(Math.random() > 0.5 ? 'thunder' : 'snow', true); 
+    } else if (map.theme === 'snake_valley') {
+      this.setWeather(Math.random() > 0.5 ? 'rain' : 'sandstorm', true); 
+    } else if (map.theme === 'sabak_castle') {
+      this.setWeather('sandstorm', true); 
+    } else {
+      this.setWeather('sunny', true);
+    }
+
     const spawnX = targetX ?? Math.floor(map.width / 2);
     const spawnY = targetY ?? Math.floor(map.height / 2);
     this.character.x = spawnX;
@@ -1207,6 +1528,7 @@ export class GameEngine {
           templateId: monsterTemplateId,
           id: `${monsterTemplateId}_${Date.now()}_${i}_${Math.random()}`,
           hp: template.maxHp,
+          spawnTime: Date.now(),
           x: randX,
           y: randY,
           targetX: randX,
@@ -1285,6 +1607,136 @@ export class GameEngine {
     return 'default';
   }
 
+  public getWeaponType(): 'sword' | 'staff' | 'talisman' {
+    const weapon = this.character.equipment.weapon;
+    const profession = this.character.profession;
+    if (weapon) {
+      const name = weapon.name.toLowerCase();
+      const id = weapon.id.toLowerCase();
+      if (
+        id.includes('fan') || 
+        name.includes('扇') || 
+        id.includes('talisman') || 
+        name.includes('符') || 
+        id.includes('wuji') || 
+        name.includes('棍') || 
+        id.includes('yinshe') || 
+        name.includes('银蛇') || 
+        name.includes('玄天')
+      ) {
+        return 'talisman';
+      }
+      if (id.includes('staff') || id.includes('wand') || name.includes('权杖') || name.includes('杖') || id.includes('soul_eater') || id.includes('bone_jade')) {
+        return 'staff';
+      }
+      if (id.includes('sword') || id.includes('chopper') || id.includes('axe') || id.includes('blade') || id.includes('purgatory') || id.includes('slayer') || name.includes('剑') || name.includes('刀') || name.includes('斧') || name.includes('刃') || name.includes('裁决')) {
+        return 'sword';
+      }
+      // Fallback by stats
+      if ((weapon.physAtkMax || 0) > (weapon.magAtkMax || 0) && (weapon.physAtkMax || 0) > (weapon.taoAtkMax || 0)) {
+        return 'sword';
+      }
+      if ((weapon.magAtkMax || 0) > (weapon.physAtkMax || 0) && (weapon.magAtkMax || 0) > (weapon.taoAtkMax || 0)) {
+        return 'staff';
+      }
+      if ((weapon.taoAtkMax || 0) > (weapon.physAtkMax || 0) && (weapon.taoAtkMax || 0) > (weapon.magAtkMax || 0)) {
+        return 'talisman';
+      }
+    }
+    // Fallback to profession
+    if (profession === 'warrior') return 'sword';
+    if (profession === 'mage') return 'staff';
+    if (profession === 'taoist') return 'talisman';
+    return 'sword';
+  }
+
+  public getArmorClass(): 'heavy' | 'light' | 'robe' {
+    const armor = this.character.equipment.armor;
+    const profession = this.character.profession;
+    if (armor) {
+      const name = armor.name || '';
+      if (
+        name.includes('战甲') ||
+        name.includes('盔') ||
+        name.includes('重') ||
+        name.includes('金属') ||
+        name.includes('幽灵') ||
+        name.includes('恶魔战甲')
+      ) {
+        return 'heavy';
+      }
+      if (
+        name.includes('袍') ||
+        name.includes('羽衣') ||
+        name.includes('灵魂') ||
+        name.includes('魔衣')
+      ) {
+        return 'robe';
+      }
+      if (
+        name.includes('皮') ||
+        name.includes('轻') ||
+        name.includes('衣')
+      ) {
+        return 'light';
+      }
+    }
+    if (profession === 'warrior') return 'heavy';
+    if (profession === 'mage') return 'robe';
+    return 'light';
+  }
+
+  public getMonsterCategory(m: Monster): 'beast' | 'humanoid' | 'undead' {
+    const templateId = m.templateId || this.getMonsterTypeId(m);
+    const name = m.name;
+    
+    // 1. Undead (亡灵)
+    if (
+      templateId === 'skeleton_warrior' ||
+      templateId.includes('skeleton') ||
+      templateId.includes('zombie') ||
+      templateId.includes('ghost') ||
+      name.includes('骷髅') ||
+      name.includes('僵尸') ||
+      name.includes('尸') ||
+      name.includes('鬼') ||
+      name.includes('亡灵') ||
+      name.includes('骨') ||
+      name.includes('幽灵')
+    ) {
+      return 'undead';
+    }
+
+    // 2. Beast (野兽)
+    if (
+      templateId === 'chicken' ||
+      templateId === 'deer' ||
+      templateId === 'snake' ||
+      templateId === 'white_boar' ||
+      templateId.includes('dragon') ||
+      templateId.includes('boar') ||
+      templateId.includes('beast') ||
+      name.includes('鸡') ||
+      name.includes('鹿') ||
+      name.includes('蛇') ||
+      name.includes('猪') ||
+      name.includes('龙') ||
+      name.includes('犬') ||
+      name.includes('狼') ||
+      name.includes('蜈蚣') ||
+      name.includes('多角虫') ||
+      name.includes('蛤蟆') ||
+      name.includes('蝎') ||
+      name.includes('兽') ||
+      name.includes('白野猪')
+    ) {
+      return 'beast';
+    }
+
+    // 3. Humanoid (人形) - Default fallback
+    return 'humanoid';
+  }
+
   // Engine Update Loop (Run every ~50ms)
   public update(now: number) {
     // Check Combo Decay
@@ -1323,43 +1775,66 @@ export class GameEngine {
 
     this.monsters.forEach(m => {
       if (m.hp <= 0) return;
+      if (m.stunUntil && now < m.stunUntil) return; // Stunned monster cannot act
 
-      // Dist to player
+      // Determine Aggro Target
+      const aggroPlayer = m.aggroPlayer || 0;
+      const aggroPet = m.aggroPet || 0;
+      let targetIsPet = false;
+
+      // Base distances
       const distToPlayer = Math.hypot(this.character.x - m.x, this.character.y - m.y);
-
-      // Dist to Taoist pet
       let distToPet = 999;
       if (this.character.pet && this.character.pet.hp > 0) {
         distToPet = Math.hypot(this.character.pet.x - m.x, this.character.pet.y - m.y);
       }
 
-      const aggroRange = m.isBoss ? 8 : 4;
+      // If pet exists and has more aggro, or is significantly closer without player having much aggro
+      if (this.character.pet && this.character.pet.hp > 0) {
+        if (aggroPet > aggroPlayer * 1.5) {
+          targetIsPet = true;
+        } else if (aggroPet > 0 && aggroPlayer === 0) {
+          targetIsPet = true;
+        } else if (distToPet < distToPlayer - 2 && aggroPlayer < 50) {
+          targetIsPet = true;
+        }
+      }
 
-      if (distToPet < distToPlayer && distToPet <= m.attackRange) {
-        // Attack Pet
+      const activeDist = targetIsPet ? distToPet : distToPlayer;
+      const targetX = targetIsPet ? this.character.pet!.x : this.character.x;
+      const targetY = targetIsPet ? this.character.pet!.y : this.character.y;
+
+      const aggroRange = m.isBoss ? 8 : (aggroPlayer > 0 || aggroPet > 0 ? 12 : 5);
+
+      if (activeDist <= m.attackRange) {
+        // Attack Target
         if (now - m.lastAtkTime >= m.atkCooldownMs) {
           m.lastAtkTime = now;
           soundFX.playMonsterAttack(this.getMonsterTypeId(m));
-          if (this.character.pet) {
-            const dmg = Math.max(5, m.physAtk - this.character.pet.def);
-            this.character.pet.hp = Math.max(0, this.character.pet.hp - dmg);
-            this.addParticle(this.character.pet.x, this.character.pet.y, 'damage_red', `-${dmg}`);
-            if (this.character.pet.hp <= 0) {
-              this.addParticle(this.character.pet.x, this.character.pet.y, 'text_info', '神兽阵亡');
+          
+          if (targetIsPet) {
+            const dmg = Math.max(5, m.physAtk - this.character.pet!.def);
+            this.character.pet!.hp = Math.max(0, this.character.pet!.hp - dmg);
+            this.addParticle(this.character.pet!.x, this.character.pet!.y, 'damage_red', `-${dmg}`);
+            if (this.character.pet!.hp <= 0) {
+              this.addParticle(this.character.pet!.x, this.character.pet!.y, 'text_info', '神兽阵亡');
             }
+          } else {
+            this.monsterAttackPlayer(m, now);
           }
         }
-      } else if (distToPlayer <= m.attackRange) {
-        // Attack Player
-        if (now - m.lastAtkTime >= m.atkCooldownMs) {
-          m.lastAtkTime = now;
-          soundFX.playMonsterAttack(this.getMonsterTypeId(m));
-          this.monsterAttackPlayer(m, now);
+      } else if (activeDist <= aggroRange && !map.isSafeZone) {
+        // AI Logic: Move towards or kite
+        let moveDir = 1; // 1 = towards, -1 = away
+
+        // Kiting logic for ranged monsters
+        if (m.attackRange > 2 && activeDist < m.attackRange - 1.5) {
+          moveDir = -1; // back away
         }
-      } else if (distToPlayer <= aggroRange && !map.isSafeZone) {
-        // Move towards player
-        const dx = Math.sign(this.character.x - m.x) * 0.1 * m.speed;
-        const dy = Math.sign(this.character.y - m.y) * 0.1 * m.speed;
+
+        const dx = Math.sign(targetX - m.x) * 0.1 * m.speed * moveDir;
+        const dy = Math.sign(targetY - m.y) * 0.1 * m.speed * moveDir;
+        
         m.x = Math.max(1, Math.min(map.width - 1, m.x + dx));
         m.y = Math.max(1, Math.min(map.height - 1, m.y + dy));
 
@@ -1389,6 +1864,7 @@ export class GameEngine {
             pet.lastAtkTime = now;
             const dmg = Math.max(10, pet.atk - targetM.physDef);
             targetM.hp = Math.max(0, targetM.hp - dmg);
+            targetM.aggroPet = (targetM.aggroPet || 0) + dmg;
             this.addParticle(targetM.x, targetM.y, 'damage_yellow', `狗子三昧真火 -${dmg}`);
             soundFX.playFire();
             if (targetM.hp <= 0) {
@@ -1412,7 +1888,17 @@ export class GameEngine {
   }
 
   private monsterAttackPlayer(m: Monster, now: number) {
+    m.aggroPlayer = (m.aggroPlayer || 0) + 100;
     let rawDmg = Math.max(2, m.physAtk - this.stats.physDef);
+
+    // Check 护体神盾 Aegis Shield Mitigation
+    if (now < this.aegisShieldUntil) {
+      rawDmg = Math.max(1, Math.floor(rawDmg * 0.75));
+      if (Math.random() < 0.40) {
+        rawDmg = Math.max(1, Math.floor(rawDmg * 0.5));
+        this.addParticle(this.character.x, this.character.y, 'damage_block', `🛡️【神盾格挡】 -${rawDmg}`);
+      }
+    }
 
     // Trigger Monster Hit VFX on Player
     if (m.isBoss) {
@@ -1451,7 +1937,7 @@ export class GameEngine {
 
     this.stats.hp = Math.max(0, this.stats.hp - rawDmg);
     this.addParticle(this.character.x, this.character.y, 'damage_red', `-${rawDmg}`);
-    soundFX.playHit();
+    soundFX.playPlayerHurt(this.character.profession, this.character.gender === 'female');
 
     // Check Player Death & 复活戒指 Resurrection Ring
     if (this.stats.hp <= 0) {
@@ -1487,6 +1973,186 @@ export class GameEngine {
 
     this.stats.mp -= skill.mpCost;
     skill.lastCastTime = now;
+
+    // Handle passive skills
+    if (skill.isPassive) {
+      return;
+    }
+
+    // Handle Aegis Shield
+    if (skill.particleType === 'aegis_shield') {
+      this.aegisShieldUntil = now + 25000;
+      this.addVfxParticle({
+        x: this.character.x,
+        y: this.character.y,
+        vfxKind: 'aegis_shield',
+        durationMs: 2500
+      });
+      this.addParticle(this.character.x, this.character.y, 'text_gold', '【护体神盾】守护真气激活（25秒）！');
+      soundFX.playLevelUp();
+      return;
+    }
+
+    // Handle Savage Charge
+    if (skill.particleType === 'savage_charge') {
+      let targetM = this.monsters.find(m => m.id === targetMonsterId && m.hp > 0);
+      if (!targetM && this.targetMonsterId) {
+        targetM = this.monsters.find(m => m.id === this.targetMonsterId && m.hp > 0);
+      }
+      if (!targetM) {
+        targetM = this.monsters
+          .filter(m => m.hp > 0)
+          .sort((a, b) => Math.hypot(a.x - this.character.x, a.y - this.character.y) - Math.hypot(b.x - this.character.x, b.y - this.character.y))[0];
+      }
+      if (!targetM) return;
+
+      const dx = Math.sign(targetM.x - this.character.x) || 1;
+      const dy = Math.sign(targetM.y - this.character.y) || 0;
+      let nextX = this.character.x + dx * 2;
+      let nextY = this.character.y + dy * 2;
+
+      if (this.isTileBlocked(nextX, nextY)) {
+        const recoil = Math.floor(this.stats.maxHp * 0.05);
+        this.stats.hp = Math.max(1, this.stats.hp - recoil);
+        this.addParticle(this.character.x, this.character.y, 'damage_red', `冲撞壁障! -${recoil}`);
+      } else {
+        this.character.x = nextX;
+        this.character.y = nextY;
+      }
+
+      targetM.x += dx * 2;
+      targetM.y += dy * 2;
+      targetM.stunUntil = now + 1800;
+
+      const angle = Math.atan2(dy, dx);
+      this.addVfxParticle({
+        x: targetM.x,
+        y: targetM.y,
+        startX: this.character.x,
+        startY: this.character.y,
+        vfxKind: 'savage_charge',
+        durationMs: 650,
+        angle
+      });
+      this.addParticle(targetM.x, targetM.y, 'text_gold', '【野蛮冲撞】撞飞眩晕！');
+      
+      const dmg = Math.max(10, Math.floor(this.stats.physAtkMax * skill.damageRatio) - targetM.physDef);
+      targetM.hp = Math.max(0, targetM.hp - dmg);
+      this.addParticle(targetM.x, targetM.y, 'damage_crit', `💥野蛮冲撞 -${dmg}`, 'warrior');
+      soundFX.playWeaponHit(this.getWeaponType(), this.getMonsterCategory(targetM), true, false, this.getArmorClass());
+      if (targetM.hp <= 0) this.onMonsterKilled(targetM);
+      return;
+    }
+
+    // Handle Sky Slash
+    if (skill.particleType === 'sky_slash') {
+      let targetM = this.monsters.find(m => m.id === targetMonsterId && m.hp > 0);
+      if (!targetM && this.targetMonsterId) {
+        targetM = this.monsters.find(m => m.id === this.targetMonsterId && m.hp > 0);
+      }
+      if (!targetM) {
+        targetM = this.monsters
+          .filter(m => m.hp > 0)
+          .sort((a, b) => Math.hypot(a.x - this.character.x, a.y - this.character.y) - Math.hypot(b.x - this.character.x, b.y - this.character.y))[0];
+      }
+      if (!targetM) return;
+
+      const angle = Math.atan2(targetM.y - this.character.y, targetM.x - this.character.x);
+      this.addVfxParticle({
+        x: targetM.x,
+        y: targetM.y,
+        startX: this.character.x,
+        startY: this.character.y,
+        vfxKind: 'sky_slash',
+        durationMs: 850,
+        angle
+      });
+
+      const dx = targetM.x - this.character.x;
+      const dy = targetM.y - this.character.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const dirX = dx / len;
+      const dirY = dy / len;
+
+      let hitCount = 0;
+      this.monsters.forEach(m => {
+        if (m.hp <= 0) return;
+        const mDx = m.x - this.character.x;
+        const mDy = m.y - this.character.y;
+        const dot = mDx * dirX + mDy * dirY;
+        const perp = Math.abs(mDx * (-dirY) + mDy * dirX);
+        if (dot >= 0 && dot <= 3.8 && perp <= 1.2) {
+          hitCount++;
+          const dmg = Math.max(15, Math.floor(this.stats.physAtkMax * skill.damageRatio) - m.physDef);
+          m.hp = Math.max(0, m.hp - dmg);
+          this.addParticle(m.x, m.y, 'damage_crit', `⚡【开天斩】 -${dmg}`, 'warrior');
+          soundFX.playWeaponHit(this.getWeaponType(), this.getMonsterCategory(m), true, false, this.getArmorClass());
+          if (m.hp <= 0) this.onMonsterKilled(m);
+        }
+      });
+      if (hitCount > 0) this.registerComboHit(hitCount);
+      return;
+    }
+
+    // Handle Sun Chaser
+    if (skill.particleType === 'sun_chaser') {
+      let targetM = this.monsters.find(m => m.id === targetMonsterId && m.hp > 0);
+      if (!targetM && this.targetMonsterId) {
+        targetM = this.monsters.find(m => m.id === this.targetMonsterId && m.hp > 0);
+      }
+      if (!targetM) {
+        targetM = this.monsters
+          .filter(m => m.hp > 0)
+          .sort((a, b) => Math.hypot(a.x - this.character.x, a.y - this.character.y) - Math.hypot(b.x - this.character.x, b.y - this.character.y))[0];
+      }
+      if (!targetM) return;
+
+      const angle = Math.atan2(targetM.y - this.character.y, targetM.x - this.character.x);
+      const dx = targetM.x - this.character.x;
+      const dy = targetM.y - this.character.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const dirX = dx / len;
+      const dirY = dy / len;
+
+      const oldX = this.character.x;
+      const oldY = this.character.y;
+
+      let newX = oldX + Math.round(dirX * 3.5);
+      let newY = oldY + Math.round(dirY * 3.5);
+      if (!this.isTileBlocked(newX, newY)) {
+        this.character.x = newX;
+        this.character.y = newY;
+      }
+
+      this.addVfxParticle({
+        x: this.character.x,
+        y: this.character.y,
+        startX: oldX,
+        startY: oldY,
+        vfxKind: 'sun_chaser',
+        durationMs: 900,
+        angle
+      });
+
+      let hitCount = 0;
+      this.monsters.forEach(m => {
+        if (m.hp <= 0) return;
+        const mDx = m.x - oldX;
+        const mDy = m.y - oldY;
+        const dot = mDx * dirX + mDy * dirY;
+        const perp = Math.abs(mDx * (-dirY) + mDy * dirX);
+        if (dot >= 0 && dot <= 4.5 && perp <= 1.5) {
+          hitCount++;
+          const dmg = Math.max(20, Math.floor(this.stats.physAtkMax * skill.damageRatio) - m.physDef);
+          m.hp = Math.max(0, m.hp - dmg);
+          this.addParticle(m.x, m.y, 'damage_crit', `☀️【逐日剑法】 -${dmg}`, 'warrior');
+          soundFX.playWeaponHit(this.getWeaponType(), this.getMonsterCategory(m), true, false, this.getArmorClass());
+          if (m.hp <= 0) this.onMonsterKilled(m);
+        }
+      });
+      if (hitCount > 0) this.registerComboHit(hitCount);
+      return;
+    }
 
     // Handle Skill Actions & VFX
     if (skill.particleType === 'heal') {
@@ -1663,9 +2329,16 @@ export class GameEngine {
         if (dist <= skill.aoeRadius) {
           hitCount++;
           m.hp = Math.max(0, m.hp - finalDmg);
+          m.aggroPlayer = (m.aggroPlayer || 0) + finalDmg;
           const pType = isCrit ? 'damage_crit' : isBlock ? 'damage_block' : 'damage_normal';
           const pText = isCrit ? `💥${skill.name}暴击! -${finalDmg}` : isBlock ? `🛡️格挡 -${finalDmg}` : `-${finalDmg}`;
           this.addParticle(m.x, m.y, pType, pText, skill.profession);
+          
+          const wType = this.getWeaponType();
+          const mCat = this.getMonsterCategory(m);
+          soundFX.playWeaponHit(wType, mCat, isCrit, isBlock, this.getArmorClass());
+          soundFX.playMonsterHit(this.getMonsterTypeId(m));
+
           if (m.hp <= 0) this.onMonsterKilled(m);
         }
       });
@@ -1674,17 +2347,22 @@ export class GameEngine {
       }
     } else {
       targetM.hp = Math.max(0, targetM.hp - finalDmg);
+      targetM.aggroPlayer = (targetM.aggroPlayer || 0) + finalDmg;
       const pType = isCrit ? 'damage_crit' : isBlock ? 'damage_block' : 'damage_normal';
       const pText = isCrit ? `💥${skill.name}暴击! -${finalDmg}` : isBlock ? `🛡️格挡 -${finalDmg}` : `-${finalDmg}`;
       this.addParticle(targetM.x, targetM.y, pType, pText, skill.profession);
+      
+      const wType = this.getWeaponType();
+      const mCat = this.getMonsterCategory(targetM);
+      soundFX.playWeaponHit(wType, mCat, isCrit, isBlock, this.getArmorClass());
+      soundFX.playMonsterHit(this.getMonsterTypeId(targetM));
+
       this.registerComboHit(1);
       if (targetM.hp <= 0) this.onMonsterKilled(targetM);
     }
 
     // Play SFX
-    if (skill.particleType === 'thunderbolt') soundFX.playThunder();
-    else if (skill.particleType === 'fire_sword') soundFX.playFire();
-    else soundFX.playSwing();
+    soundFX.playSkillRelease(skill.profession, skill.particleType);
 
     // Special Ring Check - 麻痹戒指 Paralysis
     const ringL = this.character.equipment.ringLeft;
@@ -1704,7 +2382,10 @@ export class GameEngine {
     this.targetMonsterId = monsterId;
     const dist = Math.hypot(m.x - this.character.x, m.y - this.character.y);
 
-    if (dist > 1.8) {
+    const isMelee = this.character.profession === 'warrior';
+    const maxAtkDist = isMelee ? 1.8 : 5.0;
+
+    if (dist > maxAtkDist) {
       // Move closer smoothly without jumping walls
       const speedBonus = this.stats.moveSpeedBonus || 0;
       this.stepTowards(m.x, m.y, 0.055 * (1 + speedBonus));
@@ -1723,6 +2404,15 @@ export class GameEngine {
     }
 
     let dmg = Math.max(2, baseAtk - m.physDef);
+    
+    // Check 攻杀剑术 Passive Trigger
+    const hasPowerSlash = this.character.skills.some(s => s.id === 'warrior_power_slash');
+    let isPowerSlash = false;
+    if (hasPowerSlash && Math.random() < 0.30) {
+      isPowerSlash = true;
+      dmg = Math.floor(dmg * 1.8);
+    }
+
     const isCrit = Math.random() < this.stats.critChance;
     if (isCrit) {
       dmg = Math.floor(dmg * 1.5);
@@ -1738,11 +2428,11 @@ export class GameEngine {
       y: m.y,
       startX: this.character.x,
       startY: this.character.y,
-      vfxKind: isCrit ? 'fire_sword' : 'slash',
+      vfxKind: isPowerSlash ? 'power_slash' : (isCrit ? 'fire_sword' : 'slash'),
       durationMs: 400,
       angle: atkAngle
     });
-    if (isCrit) {
+    if (isCrit || isPowerSlash) {
       this.addVfxParticle({
         x: m.x,
         y: m.y,
@@ -1752,10 +2442,16 @@ export class GameEngine {
     }
 
     m.hp = Math.max(0, m.hp - dmg);
-    const pType = isCrit ? 'damage_crit' : isBlock ? 'damage_block' : 'damage_normal';
-    const pText = isCrit ? `💥暴击 -${dmg}` : isBlock ? `🛡️格挡 -${dmg}` : `-${dmg}`;
+    m.aggroPlayer = (m.aggroPlayer || 0) + dmg;
+    const pType = (isPowerSlash || isCrit) ? 'damage_crit' : isBlock ? 'damage_block' : 'damage_normal';
+    const pText = isPowerSlash ? `💥攻杀剑术! -${dmg}` : (isCrit ? `💥暴击 -${dmg}` : isBlock ? `🛡️格挡 -${dmg}` : `-${dmg}`);
     this.addParticle(m.x, m.y, pType, pText, this.character.profession);
-    soundFX.playHit();
+    
+    const wType = this.getWeaponType();
+    const mCat = this.getMonsterCategory(m);
+    soundFX.playWeaponHit(wType, mCat, isCrit, isBlock, this.getArmorClass());
+    soundFX.playMonsterHit(this.getMonsterTypeId(m));
+
     this.registerComboHit(1);
 
     if (m.hp <= 0) {
@@ -1764,6 +2460,12 @@ export class GameEngine {
   }
 
   private onMonsterKilled(m: Monster) {
+    if (this.targetMonsterId === m.id) {
+      this.targetMonsterId = null;
+    }
+    m.aggroPlayer = 0;
+    m.deathTime = Date.now();
+    soundFX.playMonsterDeath(this.getMonsterTypeId(m));
     this.registerComboHit(1);
     this.addVfxParticle({
       x: m.x,
@@ -1866,6 +2568,9 @@ export class GameEngine {
           const rx = Math.floor(Math.random() * (map.width - 4)) + 2;
           const ry = Math.floor(Math.random() * (map.height - 4)) + 2;
           m.hp = template.maxHp;
+          m.spawnTime = Date.now();
+          m.deathTime = undefined;
+          soundFX.playMonsterSpawn();
           m.x = rx;
           m.y = ry;
         }
@@ -1874,10 +2579,11 @@ export class GameEngine {
   }
 
   private updateAutoBattle(now: number) {
-    // Check Auto Potions
-    const hpPct = (this.stats.hp / this.stats.hp) * 100;
-    if (this.character.autoBattleSettings.enabled && (this.stats.hp / this.stats.maxHp) * 100 < this.character.autoBattleSettings.autoPotionHp) {
-      // Auto drink potion
+    this.initAutoSettings();
+    const settings = this.character.autoBattleSettings;
+
+    // 1. Check Auto Potions
+    if (settings.enabled && (this.stats.hp / this.stats.maxHp) * 100 < settings.autoPotionHp) {
       const potIdx = this.character.inventory.findIndex(item => item?.type === 'potion');
       if (potIdx >= 0) {
         const item = this.character.inventory[potIdx];
@@ -1886,7 +2592,6 @@ export class GameEngine {
           this.stats.mp = Math.min(this.stats.maxMp, this.stats.mp + 300);
           this.addParticle(this.character.x, this.character.y, 'heal_green', '+500 HP');
           soundFX.playPotion();
-          // Remove potion count or item
           if ((item.count || 1) > 1) {
             item.count! -= 1;
           } else {
@@ -1896,26 +2601,219 @@ export class GameEngine {
       }
     }
 
-    if (!this.character.autoBattleSettings.enabled) return;
+    if (!settings.enabled) return;
 
-    // Find target
-    let targetM = this.monsters.find(m => m.id === this.targetMonsterId && m.hp > 0);
-    if (!targetM) {
-      targetM = this.monsters
-        .filter(m => m.hp > 0)
-        .sort((a, b) => Math.hypot(a.x - this.character.x, a.y - this.character.y) - Math.hypot(b.x - this.character.x, b.y - this.character.y))[0];
-      if (targetM) this.targetMonsterId = targetM.id;
-    }
+    const speedBonus = this.stats.moveSpeedBonus || 0;
+    const moveStep = 0.065 * (1 + speedBonus);
+    const prevX = this.character.x;
+    const prevY = this.character.y;
 
-    if (targetM) {
-      // Cast best available skill or standard attack
-      const availableSkill = this.character.skills.find(s => now - s.lastCastTime >= s.cooldownMs && this.stats.mp >= s.mpCost);
-      if (availableSkill) {
-        this.castSkill(availableSkill.id, targetM.id);
-      } else {
-        this.attackTarget(targetM.id);
+    // 2. Clear expired unreachable monster entries
+    for (const [mId, expireTime] of this.unreachableMonsters.entries()) {
+      if (now >= expireTime) {
+        this.unreachableMonsters.delete(mId);
       }
     }
+
+    // Filter living monsters excluding temporarily unreachable ones
+    const livingMonsters = this.monsters.filter(
+      m => m.hp > 0 && (!this.unreachableMonsters.has(m.id) || now >= this.unreachableMonsters.get(m.id)!)
+    );
+
+    // Active attacker check: any living monster that attacked player or is within close proximity
+    const activeAttacker = livingMonsters
+      .filter(m => {
+        const dist = Math.hypot(m.x - this.character.x, m.y - this.character.y);
+        return (m.aggroPlayer && m.aggroPlayer > 0) || dist <= (m.attackRange + 1.5) || dist <= 4.0;
+      })
+      .sort((a, b) => 
+        Math.hypot(a.x - this.character.x, a.y - this.character.y) - 
+        Math.hypot(b.x - this.character.x, b.y - this.character.y)
+      )[0];
+
+    let targetM: Monster | null = null;
+
+    if (activeAttacker) {
+      // Priority 1: Immediate counter-attack against monster attacking/threatening the player!
+      targetM = activeAttacker;
+      this.targetMonsterId = targetM.id;
+    } else {
+      // Priority 2: Find nearest living monster
+      let currentTarget = this.targetMonsterId ? livingMonsters.find(m => m.id === this.targetMonsterId) : null;
+      let closestMonster = livingMonsters
+        .sort((a, b) => 
+          Math.hypot(a.x - this.character.x, a.y - this.character.y) - 
+          Math.hypot(b.x - this.character.x, b.y - this.character.y)
+        )[0];
+
+      if (closestMonster) {
+        const closestDist = Math.hypot(closestMonster.x - this.character.x, closestMonster.y - this.character.y);
+        const currentDist = currentTarget ? Math.hypot(currentTarget.x - this.character.x, currentTarget.y - this.character.y) : 999;
+
+        // Switch to closest if no current target OR current target is dead/further away (> closest + 5.0) or > 15 tiles
+        if (!currentTarget || currentDist > 15.0 || closestDist < currentDist - 5.0) {
+          targetM = closestMonster;
+          this.targetMonsterId = targetM.id;
+        } else {
+          targetM = currentTarget;
+        }
+      }
+    }
+
+    // 3. Auto-Loot Movement (Only for drops that pass user pickup settings, when no immediate monster threat within 3.5 tiles)
+    const immediateThreat = targetM && Math.hypot(targetM.x - this.character.x, targetM.y - this.character.y) <= 3.5;
+    if (!immediateThreat && settings.pickupEnabled && this.drops.length > 0) {
+      const validDrops = this.drops.filter(d => now - d.dropTime >= 150 && this.isDropPickupEligible(d));
+      if (validDrops.length > 0) {
+        const closestDrop = validDrops.sort((a, b) => 
+          Math.hypot(a.x - this.character.x, a.y - this.character.y) - 
+          Math.hypot(b.x - this.character.x, b.y - this.character.y)
+        )[0];
+
+        const dropDist = Math.hypot(closestDrop.x - this.character.x, closestDrop.y - this.character.y);
+        // If close enough to drop (<= 12 tiles), step directly onto it and leave immediately upon pickup
+        if (dropDist <= 12.0 && dropDist > 0.4) {
+          this.stepTowards(closestDrop.x, closestDrop.y, moveStep);
+          if (this.character.x !== prevX || this.character.y !== prevY) {
+            this.notify();
+          }
+          return;
+        }
+      }
+    }
+
+    // 4. Combat & Auto-Navigation towards monster
+    if (targetM) {
+      const dist = Math.hypot(targetM.x - this.character.x, targetM.y - this.character.y);
+      const isMelee = this.character.profession === 'warrior';
+      const idealDist = isMelee ? 1.0 : 3.5;
+      const attackDistThreshold = isMelee ? 1.8 : 5.8;
+
+      // Always step towards monster if outside ideal combat distance
+      if (dist > idealDist) {
+        const startX = this.character.x;
+        const startY = this.character.y;
+        this.stepTowards(targetM.x, targetM.y, moveStep);
+
+        const movedDist = Math.hypot(this.character.x - startX, this.character.y - startY);
+
+        // Stuck detection against obstacles/walls
+        if (movedDist < 0.005) {
+          this.autoStuckCount = (this.autoStuckCount || 0) + 1;
+          if (this.autoStuckCount >= 6) { // ~100ms stuck
+            this.unreachableMonsters.set(targetM.id, now + 4000); // temporary 4s blacklist
+            this.targetMonsterId = null;
+            this.autoStuckCount = 0;
+          }
+        } else {
+          this.autoStuckCount = 0;
+        }
+      }
+
+      // Cast best available skill or standard attack when within attack range
+      if (dist <= attackDistThreshold) {
+        const availableSkill = this.character.skills.find(
+          s => !s.isPassive && now - s.lastCastTime >= s.cooldownMs && this.stats.mp >= s.mpCost
+        );
+        if (availableSkill) {
+          this.castSkill(availableSkill.id, targetM.id);
+        } else {
+          this.attackTarget(targetM.id);
+        }
+      }
+    } else {
+      // 5. Smart Continuous Auto Patrol Search (Never freeze / pause!)
+      const map = MAP_DATABASE[this.currentMapId];
+      if (map) {
+        if (!this.autoPatrolTarget) {
+          // Find direction towards any living monster on the map
+          const anyLivingMonster = this.monsters
+            .filter(m => m.hp > 0)
+            .sort((a, b) => 
+              Math.hypot(a.x - this.character.x, a.y - this.character.y) - 
+              Math.hypot(b.x - this.character.x, b.y - this.character.y)
+            )[0];
+
+          let foundTarget = false;
+          if (anyLivingMonster) {
+            const angle = Math.atan2(anyLivingMonster.y - this.character.y, anyLivingMonster.x - this.character.x);
+            // Try steps along this angle at dist 12-16
+            for (let d = 14; d >= 6; d -= 2) {
+              const testAngle = angle + (Math.random() - 0.5) * 0.5;
+              const tx = Math.max(3, Math.min(map.width - 4, Math.floor(this.character.x + Math.cos(testAngle) * d)));
+              const ty = Math.max(3, Math.min(map.height - 4, Math.floor(this.character.y + Math.sin(testAngle) * d)));
+              if (!this.isTileBlocked(tx, ty)) {
+                this.autoPatrolTarget = { x: tx, y: ty };
+                foundTarget = true;
+                break;
+              }
+            }
+          }
+
+          if (!foundTarget) {
+            // Pick a random unblocked waypoint in 8-16 tile radius
+            for (let attempts = 0; attempts < 15; attempts++) {
+              const randomAngle = Math.random() * Math.PI * 2;
+              const randomDist = 8 + Math.random() * 8;
+              const tx = Math.max(3, Math.min(map.width - 4, Math.floor(this.character.x + Math.cos(randomAngle) * randomDist)));
+              const ty = Math.max(3, Math.min(map.height - 4, Math.floor(this.character.y + Math.sin(randomAngle) * randomDist)));
+              if (!this.isTileBlocked(tx, ty)) {
+                this.autoPatrolTarget = { x: tx, y: ty };
+                break;
+              }
+            }
+          }
+          this.lastAutoPatrolTime = now;
+        }
+
+        if (this.autoPatrolTarget) {
+          const startX = this.character.x;
+          const startY = this.character.y;
+          const reached = this.stepTowards(this.autoPatrolTarget.x, this.autoPatrolTarget.y, moveStep * 0.9);
+          const movedDist = Math.hypot(this.character.x - startX, this.character.y - startY);
+
+          // Immediately clear target if reached OR stuck against obstacle so a new search angle is chosen instantly!
+          if (reached || movedDist < 0.005) {
+            this.autoPatrolTarget = null;
+          }
+        }
+      }
+    }
+
+    if (this.character.x !== prevX || this.character.y !== prevY) {
+      this.notify();
+    }
+  }
+
+  // Helper to determine if a ground drop is eligible for auto-pickup based on player settings
+  public isDropPickupEligible(drop: DropItem): boolean {
+    this.initAutoSettings();
+    const settings = this.character.autoBattleSettings;
+    if (!settings.pickupEnabled) return false;
+
+    const item = drop.item;
+    const equipmentTypes = ['weapon', 'armor', 'helmet', 'necklace', 'ring', 'bracelet', 'belt', 'boots', 'special_ring'];
+
+    // Special items like mount pills are always eligible
+    if (item.id === 'pill_mount_advance') return true;
+
+    const isEquipment = equipmentTypes.includes(item.type);
+    const isPotion = item.type === 'potion';
+    const isMaterial = item.type === 'material' || item.type === 'book';
+    const isGold = item.priceGold > 0 && !isEquipment && !isPotion && !isMaterial;
+
+    // 1. Check Category Enable Settings
+    if (isGold && !settings.pickupTypes.gold) return false;
+    if (isPotion && !settings.pickupTypes.potion) return false;
+    if (isMaterial && !settings.pickupTypes.material) return false;
+    if (isEquipment && !settings.pickupTypes.equipment) return false;
+
+    // 2. Check Equipment Rarity Settings
+    if (isEquipment) {
+      if (!settings.pickupRarities[item.rarity]) return false;
+    }
+
+    return true;
   }
 
   private checkCollisionsAndPickups() {
@@ -1970,39 +2868,31 @@ export class GameEngine {
           }
         }
 
-        // 3. Find Inventory Slot
-        let emptySlotIdx = this.character.inventory.findIndex(slot => slot === null);
-
-        // If inventory is full, trigger auto-recycle (if enabled) and auto-organize!
-        if (emptySlotIdx < 0) {
-          if (settings.autoRecycleEnabled && settings.autoRecycleOnFull) {
-            this.autoRecycleEquipment(true);
-          }
-          this.organizeInventory();
-          emptySlotIdx = this.character.inventory.findIndex(slot => slot === null);
+        // 3. Instant Auto-Recycle Check
+        if (
+          isEquipment &&
+          settings.autoRecycleEnabled &&
+          settings.autoRecycleInstant &&
+          settings.autoRecycleRarities[item.rarity] &&
+          (!settings.autoRecycleKeepOwnProfession || item.reqProfession !== this.character.profession)
+        ) {
+          const earnGold = item.recycleGold || 150;
+          const earnExp = item.recycleExp || 500;
+          this.character.gold += earnGold;
+          this.character.exp += earnExp;
+          this.trackAchievementProgress('totalGoldEarned', earnGold);
+          this.addParticle(this.character.x, this.character.y, 'text_gold', `【即时分解】拾取 [${item.name}] +${earnGold}金`);
+          soundFX.playGold();
+          return false;
         }
 
-        if (emptySlotIdx >= 0) {
-          // Instant Auto-Recycle Check
-          if (
-            isEquipment &&
-            settings.autoRecycleEnabled &&
-            settings.autoRecycleInstant &&
-            settings.autoRecycleRarities[item.rarity] &&
-            (!settings.autoRecycleKeepOwnProfession || item.reqProfession !== this.character.profession)
-          ) {
-            const earnGold = item.recycleGold || 150;
-            const earnExp = item.recycleExp || 500;
-            this.character.gold += earnGold;
-            this.character.exp += earnExp;
-            this.trackAchievementProgress('totalGoldEarned', earnGold);
-            this.addParticle(this.character.x, this.character.y, 'text_gold', `【即时分解】拾取 [${item.name}] +${earnGold}金`);
-            soundFX.playGold();
-            return false;
+        // 4. Try adding to inventory
+        const added = this.addItemToInventory(item);
+        if (added) {
+          const equipmentTypes = ['weapon', 'armor', 'helmet', 'necklace', 'ring', 'bracelet', 'belt', 'boots', 'special_ring'];
+          if (item.slot) {
+            this.checkQuickEquip(item);
           }
-
-          // Normal pickup store into inventory
-          this.character.inventory[emptySlotIdx] = { ...item };
           const isRare = ['rare', 'epic', 'legendary', 'mythic'].includes(item.rarity);
           if (isRare) {
             soundFX.playRareDrop();
@@ -2012,9 +2902,9 @@ export class GameEngine {
             this.addParticle(this.character.x, this.character.y, 'text_gold', `拾取 [${item.name}]`);
           }
           return false; // Remove drop from ground
-        } else {
-          this.addParticle(this.character.x, this.character.y, 'text_info', '背包已满！请清理或开启自动回收');
         }
+        
+        return true;
       }
       return true;
     });
@@ -2114,5 +3004,81 @@ export class GameEngine {
       radius: params.radius,
       angle: params.angle
     });
+  }
+
+  public captureTargetMonster(): boolean {
+    if (!this.targetMonsterId) {
+      this.addParticle(this.character.x, this.character.y, 'text_info', '请先选中一个目标怪物！');
+      return false;
+    }
+    const m = this.monsters.find(mon => mon.id === this.targetMonsterId && mon.hp > 0);
+    if (!m) {
+      this.addParticle(this.character.x, this.character.y, 'text_info', '怪物已死亡或不存在！');
+      return false;
+    }
+    if (m.hp / m.maxHp > 0.3) {
+      this.addParticle(this.character.x, this.character.y, 'text_info', '怪物生命值高于30%，捕捉失败！');
+      return false;
+    }
+    if (m.isBoss) {
+      this.addParticle(this.character.x, this.character.y, 'text_info', 'BOSS无法被捕捉！');
+      return false;
+    }
+
+    // Capture success
+    this.character.pet = {
+      id: `pet_${Date.now()}`,
+      name: m.name,
+      type: m.templateId || 'dog',
+      hp: m.maxHp,
+      maxHp: m.maxHp,
+      atk: Math.floor(m.physAtk * 1.5),
+      def: Math.floor(m.physDef * 1.5),
+      x: this.character.x - 1,
+      y: this.character.y,
+      lastAtkTime: 0,
+      level: 1,
+      exp: 0,
+      maxExp: 1000,
+      iconSymbol: m.iconSymbol,
+      color: m.color
+    };
+    
+    // Remove monster
+    m.hp = 0;
+    this.addParticle(m.x, m.y, 'text_gold', `成功捕捉: ${m.name}!`);
+    this.targetMonsterId = null;
+    this.notify();
+    return true;
+  }
+
+  public feedPetExp(amount: number): boolean {
+    if (!this.character.pet) {
+      this.addParticle(this.character.x, this.character.y, 'text_info', '当前没有出战的宠物！');
+      return false;
+    }
+    const pet = this.character.pet;
+    pet.exp = (pet.exp || 0) + amount;
+    pet.maxExp = pet.maxExp || 1000;
+    pet.level = pet.level || 1;
+    let leveledUp = false;
+    while (pet.exp >= pet.maxExp) {
+      pet.exp -= pet.maxExp;
+      pet.level += 1;
+      pet.maxExp = Math.floor(pet.maxExp * 1.5);
+      pet.maxHp += 50;
+      pet.atk += 10;
+      pet.def += 5;
+      pet.hp = pet.maxHp;
+      leveledUp = true;
+    }
+    
+    this.addParticle(pet.x, pet.y, 'heal_green', `宠物经验 +${amount}`);
+    if (leveledUp) {
+      this.addParticle(pet.x, pet.y, 'text_gold', `宠物升级! LV.${pet.level}`);
+      soundFX.playLevelUp();
+    }
+    this.notify();
+    return true;
   }
 }

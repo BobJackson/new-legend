@@ -20,89 +20,68 @@ function generateObstaclesForMap(mapId: string, width: number, height: number): 
   };
 
   if (mapId === 'bichi_city') {
-    // Palace Inner Walls surrounding center safezone (45..75)
-    for (let x = 45; x <= 75; x++) {
-      if (Math.abs(x - 60) > 2) { // Gate gap in center
-        addObs(x, 45, 'wall', 1, 1, '皇城北墙');
-        addObs(x, 75, 'wall', 1, 1, '皇城南墙');
-      }
-    }
-    for (let y = 45; y <= 75; y++) {
-      if (Math.abs(y - 60) > 2) { // Gate gap in center
-        addObs(45, y, 'wall', 1, 1, '皇城西墙');
-        addObs(75, y, 'wall', 1, 1, '皇城东墙');
-      }
-    }
+    // Central Safe Zone Fountain
+    addObs(60, 60, 'tree', 2, 2, '比奇喷泉');
+    
+    // Guild Master Statues
+    addObs(50, 50, 'statue', 1, 1, '战神雕像');
+    addObs(70, 50, 'statue', 1, 1, '法神雕像');
+    addObs(60, 75, 'statue', 1, 1, '天尊雕像');
 
-    // Imperial Statues at Palace Gates
-    addObs(58, 44, 'statue', 1, 1, '守护石狮(左)');
-    addObs(62, 44, 'statue', 1, 1, '守护石狮(右)');
-    addObs(58, 76, 'statue', 1, 1, '御卫长像(左)');
-    addObs(62, 76, 'statue', 1, 1, '御卫长像(右)');
-
-    // Scattered Ancient Trees & Rock Piles across expansive countryside
-    for (let tx = 10; tx < width - 10; tx += 12) {
-      for (let ty = 10; ty < height - 10; ty += 12) {
-        if (Math.abs(tx - 60) > 18 || Math.abs(ty - 60) > 18) {
-          if ((tx + ty) % 2 === 0) {
-            addObs(tx, ty, 'tree', 1, 1, '千年古树');
-          } else {
-            addObs(tx, ty, 'rock', 1, 1, '比奇巨石');
-          }
-        }
-      }
+    // Sparse trees & interactive bushes / grass / puddles
+    for (let i = 0; i < 20; i++) {
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'tree');
     }
-  }
-
+    for (let i = 0; i < 25; i++) {
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'bush', 1, 1, '摇曳的灌木');
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'grass', 1, 1, '茂密草丛');
+    }
+    for (let i = 0; i < 12; i++) {
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'puddle', 1, 1, '林间水洼');
+    }
+  } 
   else if (mapId === 'snake_valley') {
-    // Dense Pine Forest & Serpent Mountains
-    for (let x = 12; x <= width - 12; x += 10) {
-      for (let y = 12; y <= height - 12; y += 12) {
-        if (Math.abs(x - 70) > 8 || Math.abs(y - 70) > 8) {
-          addObs(x, y, 'tree', 1, 1, '毒蛇苍松');
-          if ((x + y) % 3 === 0) {
-            addObs(x + 2, y + 1, 'rock', 1, 1, '苔藓山石');
-          }
+    for (let i = 0; i < 30; i++) {
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'rock');
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'tree');
+    }
+    for (let i = 0; i < 20; i++) {
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'bush', 1, 1, '蛇谷灌木');
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'grass', 1, 1, '山谷杂草');
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'puddle', 1, 1, '清澈水洼');
+    }
+  }
+  else if (mapId === 'stone_tomb') {
+    // Maze-like structure
+    for (let x = 10; x < width - 10; x += 15) {
+      for (let y = 10; y < height - 10; y += 15) {
+        if (Math.random() > 0.4) {
+          addObs(x, y, 'wall', 3, 1, '墓穴砖墙');
+          addObs(x + 1, y, 'torch', 1, 1, '壁火长明');
+        }
+        if (Math.random() > 0.4) {
+          addObs(x, y, 'wall', 1, 3, '墓穴砖墙');
         }
       }
     }
-
-    // Serpent River Water Barriers
-    for (let y = 20; y <= height - 20; y++) {
-      if (Math.abs(y - 70) > 4) { // Bridge gap at middle
-        addObs(65, y, 'water', 1, 1, '毒蛇溪流');
-      }
+    // Tomb Pillars & damp puddles
+    addObs(40, 40, 'pillar');
+    addObs(110, 110, 'pillar');
+    for (let i = 0; i < 15; i++) {
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'puddle', 1, 1, '墓穴积水');
     }
   }
-
-  else if (mapId === 'stone_tomb') {
-    // Stone Sarcophagi & Ancient Tomb Walls forming grand labyrinth
-    for (let x = 15; x <= width - 15; x += 16) {
-      for (let y = 15; y <= height - 15; y += 16) {
-        addObs(x, y, 'ruins', 2, 2, '古代棺椁');
-        addObs(x + 6, y, 'wall', 1, 4, '石墓沉砖');
-        addObs(x, y + 6, 'wall', 4, 1, '石墓壁障');
-      }
-    }
-
-    // Skull Altars around center boss arena
-    addObs(70, 70, 'pillar', 1, 1, '祭祀骨柱');
-    addObs(80, 70, 'pillar', 1, 1, '祭祀骨柱');
-    addObs(70, 80, 'pillar', 1, 1, '祭祀骨柱');
-    addObs(80, 80, 'pillar', 1, 1, '祭祀骨柱');
-  }
-
   else if (mapId === 'zuma_temple') {
     // Grand Ceremony Stone Pillars in double grid alignment
     for (let x = 20; x <= width - 20; x += 14) {
       for (let y = 20; y <= height - 20; y += 14) {
         addObs(x, y, 'pillar', 1, 2, '祖玛神柱');
+        addObs(x + 2, y, 'torch', 1, 1, '长明壁灯');
         if ((x + y) % 28 === 0) {
           addObs(x + 4, y + 2, 'statue', 1, 1, '祖玛雕像');
         }
       }
     }
-
     // Sanctuary Guard Walls
     for (let i = 60; i <= 100; i += 3) {
       if (Math.abs(i - 80) > 3) {
@@ -111,7 +90,6 @@ function generateObstaclesForMap(mapId: string, width: number, height: number): 
       }
     }
   }
-
   else if (mapId === 'red_moon_altar') {
     // Crimson Crystal Formations & Blood Altars
     for (let cx = 25; cx <= width - 25; cx += 25) {
@@ -121,8 +99,7 @@ function generateObstaclesForMap(mapId: string, width: number, height: number): 
         }
       }
     }
-
-    // Jagged Lava Crags around Boss Room
+    // Jagged Lava Crags around Boss Room & Blood Puddles
     for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
       const rx = Math.round(90 + Math.cos(angle) * 20);
       const ry = Math.round(90 + Math.sin(angle) * 20);
@@ -130,8 +107,10 @@ function generateObstaclesForMap(mapId: string, width: number, height: number): 
         addObs(rx, ry, 'rock', 1, 1, '熔岩焦石');
       }
     }
+    for (let i = 0; i < 18; i++) {
+      addObs(Math.floor(Math.random() * width), Math.floor(Math.random() * height), 'puddle', 1, 1, '血池地潭');
+    }
   }
-
   else if (mapId === 'sabak_castle') {
     // Palace Inner Fortification Walls
     for (let x = 40; x <= 110; x++) {
@@ -145,13 +124,14 @@ function generateObstaclesForMap(mapId: string, width: number, height: number): 
         addObs(110, y, 'wall', 1, 1, '沙城右栅');
       }
     }
-
-    // Throne Room Gold Pillars
+    // Throne Room Gold Pillars & Torches
     addObs(68, 60, 'pillar', 1, 2, '沙巴克金柱');
     addObs(82, 60, 'pillar', 1, 2, '沙巴克金柱');
     addObs(68, 90, 'pillar', 1, 2, '沙巴克金柱');
     addObs(82, 90, 'pillar', 1, 2, '沙巴克金柱');
     addObs(74, 74, 'statue', 2, 2, '霸主尊像');
+    addObs(70, 70, 'torch', 1, 1, '宫殿圣火');
+    addObs(80, 70, 'torch', 1, 1, '宫殿圣火');
   }
 
   return obsList;
@@ -176,7 +156,9 @@ export const MAP_DATABASE: Record<string, MapScene> = {
     portals: [
       { x: 60, y: 60, targetMapId: 'snake_valley', targetX: 70, targetY: 70, label: '皇城中央传送阵 (通往全大陆)' },
       { x: 116, y: 60, targetMapId: 'snake_valley', targetX: 5, targetY: 70, label: '东关隘 -> 毒蛇山谷 (LV 1+)' },
-      { x: 60, y: 116, targetMapId: 'sabak_castle', targetX: 75, targetY: 5, label: '南城门 -> 沙巴克皇宫 (LV 35+)' }
+      { x: 60, y: 116, targetMapId: 'sabak_castle', targetX: 75, targetY: 5, label: '南城门 -> 沙巴克皇宫 (LV 35+)' },
+      { x: 10, y: 60, targetMapId: 'devil_square', targetX: 100, targetY: 100, label: '西关隘 -> 恶魔广场 (LV 60+)' },
+      { x: 60, y: 10, targetMapId: 'abyss_realm_1', targetX: 100, targetY: 180, label: '北城门 -> 深渊之境 (LV 85+)' }
     ],
     obstacles: generateObstaclesForMap('bichi_city', 120, 120),
     guildTerritory: {
@@ -189,7 +171,6 @@ export const MAP_DATABASE: Record<string, MapScene> = {
       ]
     }
   },
-
   'snake_valley': {
     id: 'snake_valley',
     name: '毒蛇山谷',
@@ -212,7 +193,6 @@ export const MAP_DATABASE: Record<string, MapScene> = {
     ],
     obstacles: generateObstaclesForMap('snake_valley', 140, 140)
   },
-
   'stone_tomb': {
     id: 'stone_tomb',
     name: '石墓阵七层',
@@ -237,7 +217,6 @@ export const MAP_DATABASE: Record<string, MapScene> = {
     ],
     obstacles: generateObstaclesForMap('stone_tomb', 150, 150)
   },
-
   'zuma_temple': {
     id: 'zuma_temple',
     name: '祖玛大殿',
@@ -263,7 +242,6 @@ export const MAP_DATABASE: Record<string, MapScene> = {
     ],
     obstacles: generateObstaclesForMap('zuma_temple', 160, 160)
   },
-
   'red_moon_altar': {
     id: 'red_moon_altar',
     name: '赤月峡谷祭坛',
@@ -289,7 +267,6 @@ export const MAP_DATABASE: Record<string, MapScene> = {
     ],
     obstacles: generateObstaclesForMap('red_moon_altar', 180, 180)
   },
-
   'sabak_castle': {
     id: 'sabak_castle',
     name: '沙巴克皇宫',
@@ -322,5 +299,134 @@ export const MAP_DATABASE: Record<string, MapScene> = {
         { x: 100, y: 108, label: '右城门哨所战旗', isMainFlag: false }
       ]
     }
+  },
+  'devil_square': {
+    id: 'devil_square',
+    name: '恶魔广场',
+    reqLevel: 60,
+    width: 200,
+    height: 200,
+    theme: 'stone_tomb',
+    bgGradient: ['#4a044e', '#171717'],
+    gridColor: '#701a75',
+    isSafeZone: false,
+    monsters: [
+      { monsterTemplateId: 'devil_warrior', count: 60 }
+    ],
+    bossSpawns: [
+      { monsterTemplateId: 'devil_lord', respawnTimeSec: 120, x: 100, y: 100 }
+    ],
+    portals: [
+      { x: 100, y: 100, targetMapId: 'bichi_city', targetX: 60, targetY: 60, label: '传送阵 (通往比奇)' },
+      { x: 190, y: 100, targetMapId: 'dragon_valley', targetX: 10, targetY: 100, label: '前往 龙之谷 (LV 70+)' }
+    ],
+    obstacles: generateObstaclesForMap('stone_tomb', 200, 200)
+  },
+  'dragon_valley': {
+    id: 'dragon_valley',
+    name: '龙之谷',
+    reqLevel: 70,
+    width: 200,
+    height: 200,
+    theme: 'green_field',
+    bgGradient: ['#064e3b', '#022c22'],
+    gridColor: '#047857',
+    isSafeZone: false,
+    monsters: [
+      { monsterTemplateId: 'dragon_guard', count: 40 }
+    ],
+    bossSpawns: [
+      { monsterTemplateId: 'dragon_god', respawnTimeSec: 180, x: 100, y: 100 }
+    ],
+    portals: [
+      { x: 10, y: 100, targetMapId: 'devil_square', targetX: 180, targetY: 100, label: '返回 恶魔广场' },
+      { x: 190, y: 100, targetMapId: 'abyss_domain', targetX: 10, targetY: 100, label: '前往 深渊神域 (LV 80+)' }
+    ],
+    obstacles: generateObstaclesForMap('bichi_city', 200, 200)
+  },
+  'abyss_domain': {
+    id: 'abyss_domain',
+    name: '深渊神域',
+    reqLevel: 80,
+    width: 200,
+    height: 200,
+    theme: 'red_moon',
+    bgGradient: ['#1e1b4b', '#000000'],
+    gridColor: '#312e81',
+    isSafeZone: false,
+    monsters: [
+      { monsterTemplateId: 'abyss_demon', count: 50 }
+    ],
+    bossSpawns: [
+      { monsterTemplateId: 'abyss_lord', respawnTimeSec: 300, x: 100, y: 100 }
+    ],
+    portals: [
+      { x: 10, y: 100, targetMapId: 'dragon_valley', targetX: 180, targetY: 100, label: '返回 龙之谷' }
+    ],
+    obstacles: generateObstaclesForMap('red_moon_altar', 200, 200)
+  }
+,
+  'abyss_realm_1': {
+    id: 'abyss_realm_1',
+    name: '深渊之境·外围',
+    reqLevel: 85,
+    width: 200,
+    height: 200,
+    theme: 'stone_tomb',
+    bgGradient: ['#0f172a', '#000000'],
+    gridColor: '#1e293b',
+    isSafeZone: false,
+    monsters: [
+      { monsterTemplateId: 'abyss_watcher', count: 60 }
+    ],
+    portals: [
+      { x: 100, y: 190, targetMapId: 'bichi_city', targetX: 60, targetY: 60, label: '离开深渊 (回城)' },
+      { x: 100, y: 10, targetMapId: 'abyss_realm_2', targetX: 100, targetY: 180, label: '深入 深渊之内殿 (LV 90+)' }
+    ],
+    obstacles: generateObstaclesForMap('stone_tomb', 200, 200)
+  },
+  'abyss_realm_2': {
+    id: 'abyss_realm_2',
+    name: '深渊之境·内殿',
+    reqLevel: 90,
+    width: 200,
+    height: 200,
+    theme: 'zuma_temple',
+    bgGradient: ['#312e81', '#000000'],
+    gridColor: '#3730a3',
+    isSafeZone: false,
+    monsters: [
+      { monsterTemplateId: 'abyss_watcher', count: 40 }
+    ],
+    bossSpawns: [
+      { monsterTemplateId: 'abyss_knight', respawnTimeSec: 200, x: 100, y: 100 }
+    ],
+    portals: [
+      { x: 100, y: 190, targetMapId: 'abyss_realm_1', targetX: 100, targetY: 20, label: '返回 外围' },
+      { x: 100, y: 10, targetMapId: 'abyss_realm_3', targetX: 125, targetY: 230, label: '前往 魔龙祭坛 (LV 100+)' }
+    ],
+    obstacles: generateObstaclesForMap('zuma_temple', 200, 200)
+  },
+  'abyss_realm_3': {
+    id: 'abyss_realm_3',
+    name: '深渊之境·魔龙祭坛',
+    reqLevel: 95,
+    width: 250,
+    height: 250,
+    theme: 'red_moon',
+    bgGradient: ['#4c1d95', '#000000'],
+    gridColor: '#5b21b6',
+    isSafeZone: false,
+    monsters: [
+      { monsterTemplateId: 'abyss_watcher', count: 20 }
+    ],
+    bossSpawns: [
+      { monsterTemplateId: 'ancient_magic_dragon', respawnTimeSec: 600, x: 125, y: 125 }
+    ],
+    portals: [
+      { x: 125, y: 240, targetMapId: 'abyss_realm_2', targetX: 100, targetY: 20, label: '返回 内殿' },
+      { x: 125, y: 10, targetMapId: 'bichi_city', targetX: 60, targetY: 60, label: '凯旋回城' }
+    ],
+    obstacles: generateObstaclesForMap('red_moon_altar', 250, 250)
   }
 };

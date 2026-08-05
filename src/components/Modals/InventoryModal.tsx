@@ -18,6 +18,26 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({ engine, onClose,
     if (item.slot) {
       onEquipItem(item, index);
       setSelectedItem(null);
+    } else if (item.id === 'material_capture_rope') {
+      const success = engine.captureTargetMonster();
+      if (success) {
+        if ((item.count || 1) > 1) {
+          item.count! -= 1;
+        } else {
+          engine.character.inventory[index] = null;
+        }
+        setSelectedItem(null);
+      }
+    } else if (item.id === 'material_exp_fruit') {
+      const success = engine.feedPetExp(500);
+      if (success) {
+        if ((item.count || 1) > 1) {
+          item.count! -= 1;
+        } else {
+          engine.character.inventory[index] = null;
+        }
+        setSelectedItem(null);
+      }
     } else if (item.type === 'potion') {
       engine.stats.hp = Math.min(engine.stats.maxHp, engine.stats.hp + 500);
       engine.stats.mp = Math.min(engine.stats.maxMp, engine.stats.mp + 300);
@@ -59,14 +79,17 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({ engine, onClose,
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-2xl bg-slate-900 border-2 border-amber-800 rounded-2xl p-6 relative shadow-2xl text-amber-100 max-h-[90vh] overflow-y-auto">
         <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute top-4 right-4 z-30 p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-95 transition-all"
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Header & One-Key Recycle */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-900/50 pb-4 mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-900/50 pb-4 mb-4 pr-12">
           <div className="flex items-center gap-2">
             <span className="text-3xl">🎒</span>
             <div>
@@ -153,12 +176,12 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({ engine, onClose,
 
                 {selectedItem && (
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {(selectedItem.item.slot || selectedItem.item.type === 'potion') && (
+                    {(selectedItem.item.slot || selectedItem.item.type === 'potion' || selectedItem.item.id === 'material_capture_rope' || selectedItem.item.id === 'material_exp_fruit') && (
                       <button
                         onClick={() => handleUseOrEquip(selectedItem.item, selectedItem.index)}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg shadow-md active:scale-95 transition-all"
                       >
-                        {selectedItem.item.slot ? '穿戴装备' : '使用药水'}
+                        {selectedItem.item.slot ? '穿戴装备' : selectedItem.item.id === 'material_capture_rope' ? '使用捕兽索' : selectedItem.item.id === 'material_exp_fruit' ? '喂食宠物' : '使用药水'}
                       </button>
                     )}
                     <button

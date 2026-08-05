@@ -25,6 +25,7 @@ import { WeatherModal } from './components/Modals/WeatherModal';
 import { MountModal } from './components/Modals/MountModal';
 import { PortalModal } from './components/Modals/PortalModal';
 import { PortalPrompt } from './components/HUD/PortalPrompt';
+import { QuickEquipPrompt } from './components/HUD/QuickEquipPrompt';
 
 export default function App() {
   const [characterData, setCharacterData] = useState<CharacterData | null>(null);
@@ -76,11 +77,18 @@ export default function App() {
   };
 
   const handleEquipItem = (item: Item, inventoryIndex: number) => {
-    if (!engine || !item.slot) return;
-    const currentEquip = engine.character.equipment[item.slot];
+    if (!engine) return;
+    const { targetSlot } = engine.getBestTargetSlotForItem(item);
+    const equipSlot = targetSlot || item.slot;
+    if (!equipSlot) return;
 
-    engine.character.equipment[item.slot] = item;
+    const currentEquip = engine.character.equipment[equipSlot];
+
+    engine.character.equipment[equipSlot] = item;
     engine.character.inventory[inventoryIndex] = currentEquip;
+    if (engine.quickEquipPrompt?.id === item.id) {
+      engine.clearQuickEquipPrompt();
+    }
     engine.recalculateStats();
     engine.addParticle(engine.character.x, engine.character.y, 'text_gold', `穿戴 [${item.name}]`);
     saveCharacter(engine.character);
@@ -112,6 +120,7 @@ export default function App() {
         onOpenModal={(modal) => setActiveModal(modal)}
         onToggleAutoBattle={() => {
           engine.character.autoBattleSettings.enabled = !engine.character.autoBattleSettings.enabled;
+          engine.notify();
           engine.addParticle(
             engine.character.x,
             engine.character.y,
@@ -131,6 +140,7 @@ export default function App() {
         <MiniMap engine={engine} onOpenPortalModal={() => setActiveModal('portal')} />
         <Joystick engine={engine} />
         <PortalPrompt engine={engine} onOpenPortalModal={() => setActiveModal('portal')} />
+        <QuickEquipPrompt engine={engine} onEquipItem={handleEquipItem} />
       </div>
 
       {/* Bottom HUD */}

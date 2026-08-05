@@ -56,18 +56,65 @@ export const BottomBar: React.FC<BottomBarProps> = ({ engine, onOpenModal, onCas
 
         {/* Skill Quick Buttons */}
         <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none">
-          {quickSkills.map((skill) => (
-            <button
-              key={skill.id}
-              onClick={() => onCastSkill(skill.id)}
-              className="relative w-11 h-11 rounded-xl bg-gradient-to-br from-slate-900 to-amber-950 border border-amber-800/80 flex flex-col items-center justify-center hover:border-amber-400 active:scale-95 transition-all shadow-md group"
-            >
-              <span className="text-xl">{skill.icon}</span>
-              <span className="text-[9px] font-bold text-amber-200 mt-0.5 truncate max-w-[40px]">
-                {skill.name}
-              </span>
-            </button>
-          ))}
+          {quickSkills.map((skill) => {
+            const isUnlocked = engine.character.level >= skill.reqLevel;
+            const now = Date.now();
+            const cdRemaining = Math.max(0, skill.cooldownMs - (now - skill.lastCastTime));
+            const cdRatio = skill.cooldownMs > 0 ? cdRemaining / skill.cooldownMs : 0;
+
+            return (
+              <button
+                key={skill.id}
+                onClick={() => isUnlocked && !skill.isPassive && onCastSkill(skill.id)}
+                disabled={!isUnlocked || skill.isPassive || cdRemaining > 0}
+                className={`relative w-11 h-11 rounded-xl border flex flex-col items-center justify-center transition-all shadow-md overflow-hidden ${
+                  !isUnlocked
+                    ? 'bg-slate-900 border-slate-800 opacity-50 cursor-not-allowed'
+                    : skill.isPassive
+                    ? 'bg-slate-900 border-sky-800/80 hover:border-sky-400'
+                    : 'bg-gradient-to-br from-slate-900 to-amber-950 border-amber-800/80 hover:border-amber-400 active:scale-95'
+                }`}
+                title={
+                  !isUnlocked
+                    ? `Lv.${skill.reqLevel} 解锁`
+                    : skill.isPassive
+                    ? `${skill.name} (被动技能，自动生效)`
+                    : skill.name
+                }
+              >
+                <span className="text-lg">{skill.icon}</span>
+                <span className="text-[9px] font-bold text-amber-200 mt-0.5 truncate max-w-[40px]">
+                  {skill.name}
+                </span>
+
+                {/* Cooldown Overlay Sweep */}
+                {cdRatio > 0 && !skill.isPassive && (
+                  <div
+                    className="absolute inset-0 bg-black/70 flex items-center justify-center"
+                    style={{ clipPath: `inset(0 0 ${(1 - cdRatio) * 100}% 0)` }}
+                  >
+                    <span className="text-[10px] font-black text-amber-300">
+                      {(cdRemaining / 1000).toFixed(1)}s
+                    </span>
+                  </div>
+                )}
+
+                {/* Passive Badge */}
+                {skill.isPassive && (
+                  <span className="absolute top-0 right-0 bg-sky-600 text-[8px] font-black text-white px-1 rounded-bl">
+                    被动
+                  </span>
+                )}
+
+                {/* Locked Badge */}
+                {!isUnlocked && (
+                  <div className="absolute inset-0 bg-slate-950/80 flex items-center justify-center">
+                    <span className="text-[9px] font-black text-slate-400">Lv.{skill.reqLevel}</span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
 
           {/* Quick Potion Button */}
           <button

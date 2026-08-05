@@ -20,7 +20,8 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
     iconSymbol: '🐔',
     drops: [
       { itemId: 'weapon_wooden_sword', chance: 0.3 },
-      { itemId: 'armor_cloth_shirt', chance: 0.3 }
+      { itemId: 'armor_cloth_shirt', chance: 0.3 },
+      { itemId: 'boots_leather', chance: 0.15 }
     ]
   },
   'scarecrow': {
@@ -41,6 +42,8 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
     drops: [
       { itemId: 'weapon_wooden_sword', chance: 0.35 },
       { itemId: 'armor_cloth_shirt', chance: 0.35 },
+      { itemId: 'belt_cloth', chance: 0.2 },
+      { itemId: 'boots_leather', chance: 0.2 },
       { itemId: 'potion_sun_water', chance: 0.15 }
     ]
   },
@@ -61,7 +64,9 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
     iconSymbol: '🦌',
     drops: [
       { itemId: 'weapon_ebony_sword', chance: 0.25 },
+      { itemId: 'bracelet_silver', chance: 0.2 },
       { itemId: 'helmet_bronze', chance: 0.25 },
+      { itemId: 'necklace_bone', chance: 0.25 },
       { itemId: 'potion_sun_water', chance: 0.1 }
     ]
   },
@@ -124,6 +129,8 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
     iconSymbol: '💀',
     drops: [
       { itemId: 'weapon_purgatory', chance: 0.1 },
+      { itemId: 'belt_leather', chance: 0.15 },
+      { itemId: 'boots_iron', chance: 0.15 },
       { itemId: 'blessing_oil', chance: 0.1 },
       { itemId: 'black_iron_ore', chance: 0.25 }
     ]
@@ -148,6 +155,8 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
       { itemId: 'weapon_bone_jade', chance: 0.15 },
       { itemId: 'weapon_xiaoyao_fan', chance: 0.15 },
       { itemId: 'armor_heavy_armor', chance: 0.3 },
+      { itemId: 'necklace_ruby', chance: 0.2 },
+      { itemId: 'bracelet_gold', chance: 0.2 },
       { itemId: 'blessing_oil', chance: 0.5 },
       { itemId: 'potion_sun_water', chance: 0.8 }
     ]
@@ -170,6 +179,8 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
     drops: [
       { itemId: 'weapon_judgment', chance: 0.35 },
       { itemId: 'helmet_black_iron', chance: 0.4 },
+      { itemId: 'belt_leather', chance: 0.35 },
+      { itemId: 'boots_iron', chance: 0.35 },
       { itemId: 'ring_paralysis', chance: 0.1 },
       { itemId: 'ring_bodyguard', chance: 0.1 },
       { itemId: 'blessing_oil', chance: 0.8 }
@@ -193,6 +204,8 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
     drops: [
       { itemId: 'weapon_dragon_slayer', chance: 0.15 },
       { itemId: 'weapon_soul_eater', chance: 0.15 },
+      { itemId: 'necklace_ruby', chance: 0.25 },
+      { itemId: 'bracelet_gold', chance: 0.25 },
       { itemId: 'ring_paralysis', chance: 0.2 },
       { itemId: 'ring_resurrection', chance: 0.2 },
       { itemId: 'armor_sabak_god', chance: 0.25 },
@@ -242,6 +255,204 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
       { itemId: 'armor_sabak_god', chance: 0.3 },
       { itemId: 'blessing_oil', chance: 0.9 },
       { itemId: 'black_iron_ore', chance: 1.0 }
+    ]
+  }
+
+,  'devil_warrior': {
+    name: '恶魔战士',
+    level: 60,
+    maxHp: 100000,
+    physAtk: 800,
+    physDef: 200,
+    magDef: 180,
+    expReward: 150000,
+    goldReward: 20000,
+    isBoss: false,
+    color: '#9f1239', // Rose 800
+    speed: 1.5,
+    attackRange: 1,
+    atkCooldownMs: 1200,
+    iconSymbol: '👹',
+    drops: [
+      { itemId: 'weapon_heaven_breaker', chance: 0.1 },
+      { itemId: 'armor_heaven', chance: 0.1 },
+      { itemId: 'blessing_oil', chance: 0.5 },
+      { itemId: 'black_iron_ore', chance: 0.5 }
+    ]
+  },
+  'devil_lord': {
+    name: '【Boss】恶魔领主',
+    level: 65,
+    maxHp: 250000,
+    physAtk: 1500,
+    physDef: 300,
+    magDef: 280,
+    expReward: 300000,
+    goldReward: 50000,
+    isBoss: true,
+    color: '#831843', // Pink 900
+    speed: 1.6,
+    attackRange: 2,
+    atkCooldownMs: 1000,
+    iconSymbol: '👿',
+    drops: [
+      { itemId: 'weapon_heaven_breaker', chance: 0.3 },
+      { itemId: 'armor_heaven', chance: 0.3 },
+      { itemId: 'blessing_oil', chance: 0.8 },
+      { itemId: 'ring_paralysis', chance: 0.2 }
+    ]
+  },
+  'dragon_guard': {
+    name: '龙族守卫',
+    level: 70,
+    maxHp: 500000,
+    physAtk: 3000,
+    physDef: 500,
+    magDef: 450,
+    expReward: 500000,
+    goldReward: 80000,
+    isBoss: false,
+    color: '#166534', // Green 800
+    speed: 1.6,
+    attackRange: 1,
+    atkCooldownMs: 1100,
+    iconSymbol: '🦎',
+    drops: [
+      { itemId: 'weapon_dragon_fury', chance: 0.1 },
+      { itemId: 'armor_dragon', chance: 0.1 },
+      { itemId: 'blessing_oil', chance: 0.6 }
+    ]
+  },
+  'dragon_god': {
+    name: '【世界Boss】极光龙神',
+    level: 75,
+    maxHp: 1500000,
+    physAtk: 6000,
+    physDef: 800,
+    magDef: 750,
+    expReward: 1000000,
+    goldReward: 200000,
+    isBoss: true,
+    color: '#14532d', // Green 900
+    speed: 1.8,
+    attackRange: 4,
+    atkCooldownMs: 900,
+    iconSymbol: '🐉',
+    drops: [
+      { itemId: 'weapon_dragon_fury', chance: 0.4 },
+      { itemId: 'armor_dragon', chance: 0.4 },
+      { itemId: 'ring_resurrection', chance: 0.3 },
+      { itemId: 'ring_bodyguard', chance: 0.3 }
+    ]
+  },
+  'abyss_demon': {
+    name: '深渊恶魔',
+    level: 80,
+    maxHp: 3000000,
+    physAtk: 12000,
+    physDef: 1500,
+    magDef: 1400,
+    expReward: 2000000,
+    goldReward: 300000,
+    isBoss: false,
+    color: '#4c1d95', // Violet 900
+    speed: 1.7,
+    attackRange: 1,
+    atkCooldownMs: 1000,
+    iconSymbol: '👾',
+    drops: [
+      { itemId: 'weapon_abyss_demon', chance: 0.05 },
+      { itemId: 'armor_abyss', chance: 0.05 },
+      { itemId: 'blessing_oil', chance: 0.8 }
+    ]
+  },
+  'abyss_lord': {
+    name: '【终极神明】深渊魔神',
+    level: 90,
+    maxHp: 10000000,
+    physAtk: 25000,
+    physDef: 3000,
+    magDef: 2800,
+    expReward: 5000000,
+    goldReward: 1000000,
+    isBoss: true,
+    color: '#312e81', // Indigo 900
+    speed: 2.0,
+    attackRange: 5,
+    atkCooldownMs: 800,
+    iconSymbol: '👁️',
+    drops: [
+      { itemId: 'weapon_abyss_demon', chance: 0.3 },
+      { itemId: 'armor_abyss', chance: 0.3 },
+      { itemId: 'ring_paralysis', chance: 0.5 },
+      { itemId: 'ring_resurrection', chance: 0.5 },
+      { itemId: 'ring_bodyguard', chance: 0.5 }
+    ]
+  }
+
+, 'abyss_watcher': {
+    name: '深渊守望者',
+    level: 85,
+    maxHp: 5000000,
+    physAtk: 15000,
+    physDef: 2000,
+    magDef: 1800,
+    expReward: 3000000,
+    goldReward: 400000,
+    isBoss: false,
+    color: '#1e3a8a', // blue-900
+    speed: 1.6,
+    attackRange: 2,
+    atkCooldownMs: 1100,
+    iconSymbol: '👁️‍🗨️',
+    drops: [
+      { itemId: 'blessing_oil', chance: 0.8 },
+      { itemId: 'weapon_abyss_demon', chance: 0.05 },
+      { itemId: 'armor_abyss', chance: 0.05 }
+    ]
+  },
+  'abyss_knight': {
+    name: '【Boss】深渊魔王骑士',
+    level: 90,
+    maxHp: 12000000,
+    physAtk: 28000,
+    physDef: 3500,
+    magDef: 3000,
+    expReward: 6000000,
+    goldReward: 800000,
+    isBoss: true,
+    color: '#312e81', 
+    speed: 1.8,
+    attackRange: 1,
+    atkCooldownMs: 900,
+    iconSymbol: '🏇',
+    drops: [
+      { itemId: 'weapon_abyss_demon', chance: 0.2 },
+      { itemId: 'armor_abyss', chance: 0.2 },
+      { itemId: 'ring_paralysis', chance: 0.3 }
+    ]
+  },
+  'ancient_magic_dragon': {
+    name: '【世界Boss】远古魔龙',
+    level: 100,
+    maxHp: 30000000,
+    physAtk: 50000,
+    physDef: 6000,
+    magDef: 5500,
+    expReward: 15000000,
+    goldReward: 2000000,
+    isBoss: true,
+    color: '#000000', 
+    speed: 2.0,
+    attackRange: 6,
+    atkCooldownMs: 700,
+    iconSymbol: '🐉',
+    drops: [
+      { itemId: 'weapon_ancient_dragon', chance: 0.5 },
+      { itemId: 'armor_ancient_dragon', chance: 0.5 },
+      { itemId: 'ring_resurrection', chance: 0.8 },
+      { itemId: 'ring_bodyguard', chance: 0.8 },
+      { itemId: 'ring_paralysis', chance: 0.8 }
     ]
   }
 };

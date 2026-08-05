@@ -38,6 +38,7 @@ export interface Item {
   critChance?: number; // 0-1
   specialEffect?: 'paralysis' | 'bodyguard' | 'resurrection' | 'vampire';
   luckLevel?: number; // 0-9
+  setId?: string;
   refineLevel?: number; // 0-15
   description: string;
   priceGold: number;
@@ -62,7 +63,8 @@ export interface Skill {
   aoeRadius: number; // 0 for single target
   damageRatio: number; // multiplier e.g. 1.8 = 180% damage
   description: string;
-  particleType: 'fire_sword' | 'crescent' | 'thunderbolt' | 'firewall' | 'ice_storm' | 'poison' | 'heal' | 'soul_fire' | 'summon_dog' | 'magic_shield';
+  isPassive?: boolean;
+  particleType: 'fire_sword' | 'crescent' | 'thunderbolt' | 'firewall' | 'ice_storm' | 'poison' | 'heal' | 'soul_fire' | 'summon_dog' | 'magic_shield' | 'sky_slash' | 'sun_chaser' | 'savage_charge' | 'aegis_shield' | 'power_slash' | 'slash';
 }
 
 export interface Monster {
@@ -87,9 +89,14 @@ export interface Monster {
   lastAtkTime: number;
   atkCooldownMs: number;
   drops: { itemId: string; chance: number; countMin?: number; countMax?: number }[];
+  spawnTime?: number;
+  deathTime?: number;
   iconSymbol: string;
   templateId?: string;
   lastMoveSoundTime?: number;
+  aggroPlayer?: number;
+  aggroPet?: number;
+  stunUntil?: number;
 }
 
 export interface DropItem {
@@ -106,7 +113,12 @@ export interface DropItem {
 
 export type VfxKind = 
   | 'slash'
+  | 'power_slash'
   | 'fire_sword'
+  | 'sky_slash'
+  | 'sun_chaser'
+  | 'savage_charge'
+  | 'aegis_shield'
   | 'crescent'
   | 'thunder'
   | 'ice_storm'
@@ -158,8 +170,9 @@ export interface MapObstacle {
   y: number;
   width?: number; // width in grid tiles (default 1)
   height?: number; // height in grid tiles (default 1)
-  type: 'tree' | 'rock' | 'wall' | 'statue' | 'pillar' | 'water' | 'ruins' | 'crystal';
+  type: 'tree' | 'rock' | 'wall' | 'statue' | 'pillar' | 'water' | 'ruins' | 'crystal' | 'torch' | 'bush' | 'grass' | 'puddle';
   label?: string;
+  passable?: boolean;
 }
 
 export interface GuildFlagPole {
@@ -224,7 +237,7 @@ export interface MountData {
 export interface Pet {
   id: string;
   name: string;
-  type: 'dog' | 'hero' | 'tiger';
+  type: string;
   hp: number;
   maxHp: number;
   atk: number;
@@ -232,6 +245,11 @@ export interface Pet {
   x: number;
   y: number;
   lastAtkTime: number;
+  level?: number;
+  exp?: number;
+  maxExp?: number;
+  iconSymbol?: string;
+  color?: string;
 }
 
 export type QuestType = 'main' | 'daily';
@@ -361,4 +379,19 @@ export interface GuildInfo {
   maxMembers: number;
   notice: string;
   isSabakLord: boolean;
+}
+
+export interface SetBonus {
+  setId: string;
+  setName: string;
+  requiredPieces: number;
+  physAtkBonus?: number;
+  magAtkBonus?: number;
+  taoAtkBonus?: number;
+  hpBonus?: number;
+  mpBonus?: number;
+  physDefBonus?: number;
+  magDefBonus?: number;
+  critChanceBonus?: number;
+  specialEffectId?: string;
 }

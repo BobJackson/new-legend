@@ -47,11 +47,16 @@ export const SkillsModal: React.FC<SkillsModalProps> = ({ engine, onClose }) => 
         <div className="space-y-3">
           {engine.character.skills.map((skill) => {
             const costGold = skill.level * 10000;
+            const isUnlocked = engine.character.level >= skill.reqLevel;
 
             return (
               <div
                 key={skill.id}
-                className="bg-slate-950 p-4 rounded-xl border border-amber-900/40 flex items-center justify-between gap-4"
+                className={`p-4 rounded-xl border flex items-center justify-between gap-4 transition-all ${
+                  isUnlocked
+                    ? 'bg-slate-950 border-amber-900/50'
+                    : 'bg-slate-950/60 border-slate-800 opacity-60'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">{skill.icon}</span>
@@ -61,24 +66,45 @@ export const SkillsModal: React.FC<SkillsModalProps> = ({ engine, onClose }) => 
                       <span className="text-[10px] bg-amber-950 text-amber-400 border border-amber-800 px-1.5 py-0.5 rounded">
                         LV {skill.level} / 3
                       </span>
+                      {skill.isPassive ? (
+                        <span className="text-[10px] bg-sky-950 text-sky-400 border border-sky-800 px-1.5 py-0.5 rounded font-bold">
+                          被动技能
+                        </span>
+                      ) : (
+                        <span className="text-[10px] bg-orange-950 text-orange-400 border border-orange-800 px-1.5 py-0.5 rounded font-bold">
+                          主动技能
+                        </span>
+                      )}
+                      {!isUnlocked && (
+                        <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-800 px-1.5 py-0.5 rounded">
+                          Lv.{skill.reqLevel} 解锁
+                        </span>
+                      )}
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">{skill.description}</p>
                     <p className="text-[10px] text-amber-500 mt-1">
-                      消耗魔法: {skill.mpCost} MP · 冷却时间: {(skill.cooldownMs / 1000).toFixed(1)}s · 伤害系数: {(skill.damageRatio * 100).toFixed(0)}%
+                      {skill.isPassive ? (
+                        '被动常驻生效'
+                      ) : (
+                        `消耗魔法: ${skill.mpCost} MP · 冷却时间: ${(skill.cooldownMs / 1000).toFixed(1)}s`
+                      )}
+                      {skill.damageRatio > 0 && ` · 伤害倍率: ${(skill.damageRatio * 100).toFixed(0)}%`}
                     </p>
                   </div>
                 </div>
 
                 <button
                   onClick={() => handleLevelUpSkill(skill.id)}
-                  disabled={skill.level >= 3}
+                  disabled={!isUnlocked || skill.level >= 3}
                   className={`px-3 py-2 rounded-lg font-bold text-xs whitespace-nowrap transition-all ${
-                    skill.level >= 3
+                    !isUnlocked
+                      ? 'bg-slate-800 text-slate-600 border border-slate-700 cursor-not-allowed'
+                      : skill.level >= 3
                       ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                       : 'bg-amber-600 hover:bg-amber-500 text-white shadow-md'
                   }`}
                 >
-                  {skill.level >= 3 ? '已满级' : `升级 (${costGold}金币)`}
+                  {!isUnlocked ? `等级不足(Lv.${skill.reqLevel})` : skill.level >= 3 ? '已满级' : `升级 (${costGold}金币)`}
                 </button>
               </div>
             );
