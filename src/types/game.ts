@@ -88,6 +88,9 @@ export interface Monster {
   targetY: number;
   lastAtkTime: number;
   atkCooldownMs: number;
+  isAttacking?: boolean;
+  attackStartTime?: number;
+  isEnraged?: boolean;
   drops: { itemId: string; chance: number; countMin?: number; countMax?: number }[];
   spawnTime?: number;
   deathTime?: number;
@@ -97,6 +100,7 @@ export interface Monster {
   aggroPlayer?: number;
   aggroPet?: number;
   stunUntil?: number;
+  lastBossSkillTime?: number;
 }
 
 export interface DropItem {
@@ -132,7 +136,10 @@ export type VfxKind =
   | 'spark_burst'
   | 'hit_warrior'
   | 'hit_mage'
-  | 'hit_taoist';
+  | 'hit_taoist'
+  | 'elemental_fire'
+  | 'elemental_ice'
+  | 'elemental_thunder';
 
 export interface ParticleEffect {
   id: string;
@@ -143,7 +150,8 @@ export interface ParticleEffect {
   durationMs: number;
   color: string;
   text?: string;
-  combatCategory?: 'normal' | 'crit' | 'block' | 'heal' | 'info';
+  combatCategory?: 'normal' | 'crit' | 'block' | 'heal' | 'info' | 'player_hurt';
+  elementalType?: 'fire' | 'ice' | 'lightning' | 'poison' | 'holy';
   offsetRandomX?: number;
   vfxKind?: VfxKind;
   profession?: 'warrior' | 'mage' | 'taoist';
@@ -327,6 +335,7 @@ export interface AutoSettings {
   autoRecycleInstant: boolean;
   autoRecycleRarities: Record<ItemRarity, boolean>;
   autoRecycleKeepOwnProfession: boolean;
+  autoRecycleSpecialRings?: boolean;
 }
 
 export interface CombatDisplaySettings {

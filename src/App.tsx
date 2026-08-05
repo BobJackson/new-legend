@@ -26,6 +26,7 @@ import { MountModal } from './components/Modals/MountModal';
 import { PortalModal } from './components/Modals/PortalModal';
 import { PortalPrompt } from './components/HUD/PortalPrompt';
 import { QuickEquipPrompt } from './components/HUD/QuickEquipPrompt';
+import { MonsterTargetBar } from './components/HUD/MonsterTargetBar';
 
 export default function App() {
   const [characterData, setCharacterData] = useState<CharacterData | null>(null);
@@ -78,19 +79,7 @@ export default function App() {
 
   const handleEquipItem = (item: Item, inventoryIndex: number) => {
     if (!engine) return;
-    const { targetSlot } = engine.getBestTargetSlotForItem(item);
-    const equipSlot = targetSlot || item.slot;
-    if (!equipSlot) return;
-
-    const currentEquip = engine.character.equipment[equipSlot];
-
-    engine.character.equipment[equipSlot] = item;
-    engine.character.inventory[inventoryIndex] = currentEquip;
-    if (engine.quickEquipPrompt?.id === item.id) {
-      engine.clearQuickEquipPrompt();
-    }
-    engine.recalculateStats();
-    engine.addParticle(engine.character.x, engine.character.y, 'text_gold', `穿戴 [${item.name}]`);
+    engine.equipItem(item, inventoryIndex);
     saveCharacter(engine.character);
   };
 
@@ -136,6 +125,7 @@ export default function App() {
           engine={engine}
           onOpenWeatherModal={() => setActiveModal('weather')}
         />
+        <MonsterTargetBar engine={engine} />
         <QuestTracker engine={engine} />
         <MiniMap engine={engine} onOpenPortalModal={() => setActiveModal('portal')} />
         <Joystick engine={engine} />

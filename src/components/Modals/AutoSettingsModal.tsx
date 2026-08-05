@@ -184,7 +184,7 @@ export const AutoSettingsModal: React.FC<AutoSettingsModalProps> = ({ engine, on
                       settings.autoRecycleKeepOwnProfession = !settings.autoRecycleKeepOwnProfession;
                       forceUpdate();
                     }}
-                    className={`col-span-1 sm:col-span-2 flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${
                       settings.autoRecycleKeepOwnProfession
                         ? 'bg-emerald-950/60 border-emerald-500 text-emerald-200'
                         : 'bg-slate-900 border-slate-800 text-slate-400'
@@ -196,9 +196,33 @@ export const AutoSettingsModal: React.FC<AutoSettingsModalProps> = ({ engine, on
                       <Square className="w-4 h-4 shrink-0" />
                     )}
                     <div>
-                      <div className="font-bold text-xs">🛡️ 智能保护: 保留本职业所有装备</div>
+                      <div className="font-bold text-xs">🛡️ 保留本职业装备</div>
                       <div className="text-[10px] text-slate-400">
-                        开启后仅回收其他职业装备，绝不误杀本职业极品
+                        不误删自身能穿戴的强力武器与装备
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      settings.autoRecycleSpecialRings = !settings.autoRecycleSpecialRings;
+                      forceUpdate();
+                    }}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${
+                      settings.autoRecycleSpecialRings
+                        ? 'bg-purple-950/60 border-purple-500 text-purple-200'
+                        : 'bg-slate-900 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {settings.autoRecycleSpecialRings ? (
+                      <CheckSquare className="w-4 h-4 text-purple-400 shrink-0" />
+                    ) : (
+                      <Square className="w-4 h-4 shrink-0" />
+                    )}
+                    <div>
+                      <div className="font-bold text-xs">💍 包含特戒回收</div>
+                      <div className="text-[10px] text-slate-400">
+                        回收麻痹/护身/复活戒指，换高额元宝与金币
                       </div>
                     </div>
                   </button>
@@ -244,14 +268,24 @@ export const AutoSettingsModal: React.FC<AutoSettingsModalProps> = ({ engine, on
                 </div>
               </div>
 
-              {/* One-click Manual Recycle Button */}
-              <div className="pt-2">
+              {/* One-click Manual Recycle Buttons */}
+              <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    engine.recycleSpecialRings();
+                    forceUpdate();
+                  }}
+                  className="py-3 bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600 hover:brightness-110 text-white font-black text-xs sm:text-sm rounded-xl shadow-[0_4px_15px_rgba(168,85,247,0.4)] flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                >
+                  <span>💍 一键回收特戒</span>
+                </button>
+
                 <button
                   onClick={handleManualRecycleNow}
-                  className="w-full py-3 bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-600 hover:from-amber-500 hover:to-yellow-400 text-slate-950 font-black text-sm rounded-xl shadow-[0_4px_20px_rgba(245,158,11,0.4)] flex items-center justify-center gap-2 active:scale-95 transition-all"
+                  className="py-3 bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-600 hover:from-amber-500 hover:to-yellow-400 text-slate-950 font-black text-xs sm:text-sm rounded-xl shadow-[0_4px_15px_rgba(245,158,11,0.4)] flex items-center justify-center gap-1.5 active:scale-95 transition-all"
                 >
-                  <RefreshCw className="w-4 h-4 animate-spin-slow" />
-                  <span>立即清理背包 (一键回收已选装备)</span>
+                  <RefreshCw className="w-4 h-4 animate-spin-slow shrink-0" />
+                  <span>一键回收低阶装备</span>
                 </button>
               </div>
             </div>

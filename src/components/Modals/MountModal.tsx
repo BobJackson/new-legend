@@ -1,7 +1,55 @@
 import React, { useState, useEffect } from 'react';
 import { GameEngine } from '../../engine/GameEngine';
 import { MOUNT_TIERS, MountTierConfig } from '../../data/mounts';
+import { drawMountBeastOnCanvas } from '../../utils/mountRenderer';
 import { X, Sparkles, Zap, Shield, Heart, Sword, FastForward, ChevronLeft, ChevronRight, CheckCircle2, Lock } from 'lucide-react';
+
+const MountPreviewCanvas: React.FC<{ tier: number; config: MountTierConfig }> = ({ tier, config }) => {
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+
+  React.useEffect(() => {
+    let animId: number;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const render = () => {
+      const now = Date.now();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2 + 15;
+
+      drawMountBeastOnCanvas(
+        ctx,
+        cx,
+        cy,
+        tier,
+        now,
+        config.icon,
+        config.auraColor || '#f59e0b',
+        1.25,
+        0
+      );
+
+      animId = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animId);
+  }, [tier, config]);
+
+  return (
+    <div className="relative w-full flex flex-col items-center justify-center my-1">
+      <canvas
+        ref={canvasRef}
+        width={260}
+        height={160}
+        className="rounded-xl drop-shadow-[0_0_25px_rgba(245,158,11,0.5)]"
+      />
+    </div>
+  );
+};
 
 interface MountModalProps {
   engine: GameEngine;
@@ -175,13 +223,14 @@ export const MountModal: React.FC<MountModalProps> = ({ engine, onClose }) => {
               <p className="text-[11px] text-amber-200/80 italic">{activePreviewConfig.subtitle}</p>
             </div>
 
-            {/* Giant Icon Visual */}
-            <div className="z-10 my-4 relative group">
-              <div
-                className="text-7xl sm:text-8xl transition-all duration-300 transform group-hover:scale-110 drop-shadow-[0_0_25px_rgba(245,158,11,0.6)]"
-              >
-                {activePreviewConfig.icon}
-              </div>
+            {/* Dynamic Animated Canvas Visual */}
+            <div className="z-10 my-1 relative group w-full flex flex-col items-center">
+              <MountPreviewCanvas tier={previewTier} config={activePreviewConfig} />
+              {previewTier === 10 && (
+                <div className="px-3 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-fuchsia-600 via-purple-600 to-amber-500 text-white shadow-lg border border-fuchsia-300/60 animate-pulse -mt-2">
+                  ✨ 鸿蒙紫气 · 星海翼展 · 诸天至尊 ✨
+                </div>
+              )}
             </div>
 
             {/* Description Text */}

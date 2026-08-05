@@ -638,19 +638,36 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
   let showCape = !aName.includes('布衣');
 
   if (prof === 'warrior') {
-    matType = 'metal'; armorPrimary = isFemale ? '#64748b' : '#475569'; armorSecondary = '#1e293b'; armorTrim = '#cbd5e1';
+    matType = 'metal'; 
+    armorPrimary = isFemale ? '#d97706' : '#b45309'; // Golden
+    armorSecondary = '#7f1d1d'; // Crimson Red
+    armorTrim = '#fef08a'; // Bright Gold Trim
+    capeColor1 = '#ffffff'; // White flowing cape
+    capeColor2 = '#e2e8f0'; 
+    capeBorder = '#d97706'; 
+    showCape = true;
   } else if (prof === 'mage') {
     matType = 'cloth'; armorPrimary = isFemale ? '#7e22ce' : '#4338ca'; armorSecondary = isFemale ? '#3b0764' : '#1e1b4b'; armorTrim = '#c084fc';
   } else {
     matType = 'leather'; armorPrimary = isFemale ? '#0f766e' : '#065f46'; armorSecondary = isFemale ? '#042f2e' : '#022c22'; armorTrim = '#6ee7b7';
   }
 
-  if (aName.includes('布衣')) {
+  if (aName.includes('布衣') || armorItem?.id === 'armor_cloth_shirt') {
     matType = 'cloth'; armorPrimary = isFemale ? '#be185d' : '#854d0e'; armorSecondary = isFemale ? '#831843' : '#451a03'; armorTrim = '#fde047'; showCape = false;
-  } else if (aName.includes('战神') || aName.includes('圣战') || armorItem?.rarity === 'legendary') {
+  } else if (aName.includes('战神') || aName.includes('圣战') || armorItem?.id === 'armor_heavy_armor') {
     matType = 'metal'; armorPrimary = '#b91c1c'; armorSecondary = '#7f1d1d'; armorTrim = '#fde047'; capeColor1 = '#b91c1c'; capeColor2 = '#7f1d1d'; capeBorder = '#fef08a'; legColor = '#7f1d1d'; bootColor = '#991b1b'; bootTrim = '#fde047';
-  } else if (aName.includes('沙城') || aName.includes('霸者') || armorItem?.rarity === 'mythic') {
+  } else if (aName.includes('沙城') || aName.includes('霸者') || armorItem?.id === 'armor_sabak_god') {
     matType = 'metal'; armorPrimary = '#d97706'; armorSecondary = '#78350f'; armorTrim = '#fef08a'; capeColor1 = '#d97706'; capeColor2 = '#78350f'; capeBorder = '#fde047'; legColor = '#78350f'; bootColor = '#b45309'; bootTrim = '#fef08a';
+  } else if (aName.includes('破天') || armorItem?.id === 'armor_heaven') {
+    matType = 'metal'; armorPrimary = '#0284c7'; armorSecondary = '#0c4a6e'; armorTrim = '#38bdf8'; capeColor1 = '#0284c7'; capeColor2 = '#0369a1'; capeBorder = '#7dd3fc'; legColor = '#0c4a6e'; bootColor = '#0369a1'; bootTrim = '#38bdf8';
+  } else if (aName.includes('狂龙') || armorItem?.id === 'armor_dragon') {
+    matType = 'metal'; armorPrimary = '#dc2626'; armorSecondary = '#450a0a'; armorTrim = '#f59e0b'; capeColor1 = '#ef4444'; capeColor2 = '#7f1d1d'; capeBorder = '#fbbf24'; legColor = '#450a0a'; bootColor = '#991b1b'; bootTrim = '#f59e0b';
+  } else if (aName.includes('深渊') || armorItem?.id === 'armor_abyss') {
+    matType = 'metal'; armorPrimary = '#7e22ce'; armorSecondary = '#2e1065'; armorTrim = '#c084fc'; capeColor1 = '#581c87'; capeColor2 = '#1e1b4b'; capeBorder = '#e879f9'; legColor = '#2e1065'; bootColor = '#3b0764'; bootTrim = '#c084fc';
+  } else if (aName.includes('远古魔龙') || armorItem?.id === 'armor_ancient_dragon') {
+    matType = 'metal'; armorPrimary = '#059669'; armorSecondary = '#022c22'; armorTrim = '#fef08a'; capeColor1 = '#047857'; capeColor2 = '#064e3b'; capeBorder = '#fde047'; legColor = '#022c22'; bootColor = '#065f46'; bootTrim = '#fef08a';
+  } else if (aName.includes('创世神') || armorItem?.id === 'armor_genesis') {
+    matType = 'metal'; armorPrimary = '#fef08a'; armorSecondary = '#d97706'; armorTrim = '#ffffff'; capeColor1 = '#ffffff'; capeColor2 = '#fef08a'; capeBorder = '#ffffff'; legColor = '#fef08a'; bootColor = '#d97706'; bootTrim = '#ffffff';
   } else if (aName.includes('法神') || aName.includes('烈焰')) {
     matType = 'cloth'; armorPrimary = '#6b21a8'; armorSecondary = '#3b0764'; armorTrim = '#e879f9'; capeColor1 = '#6b21a8'; capeColor2 = '#3b0764'; capeBorder = '#e879f9'; legColor = '#3b0764'; bootColor = '#581c87'; bootTrim = '#c084fc';
   }
@@ -737,6 +754,77 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
     ctx.beginPath(); ctx.arc(0, 5.5, 5.5, 0, Math.PI * 2); ctx.fillStyle = 'rgba(16, 185, 129, 0.65)'; ctx.fill();
     ctx.restore();
   }
+
+  // --- 0.5. SPECIAL ARMOR RADIANT BODY AURA & PARTICLES (高级铠甲专属穿戴特效光辉) ---
+  if (aName.includes('创世神') || armorItem?.id === 'armor_genesis') {
+    // Genesis Divine Aura
+    ctx.beginPath();
+    ctx.ellipse(0, 5, 20 + Math.sin(now * 0.005) * 3, 26 + Math.cos(now * 0.005) * 3, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; ctx.lineWidth = 3;
+    ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 20;
+    ctx.stroke(); ctx.shadowBlur = 0;
+    for (let i = 0; i < 5; i++) {
+      const pAng = now * 0.003 + (i * Math.PI * 2) / 5;
+      const pxOffset = Math.cos(pAng) * 18;
+      const pyOffset = Math.sin(pAng) * 24;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(pxOffset, pyOffset, 1.5 + Math.sin(now * 0.01 + i), 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (aName.includes('远古魔龙') || armorItem?.id === 'armor_ancient_dragon') {
+    // Emerald Dragon Sovereign Body Aura
+    ctx.beginPath();
+    ctx.ellipse(0, 5, 16 + Math.sin(now * 0.005) * 2, 22 + Math.cos(now * 0.005) * 2, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.6)'; ctx.lineWidth = 2;
+    ctx.shadowColor = '#10b981'; ctx.shadowBlur = 15;
+    ctx.stroke(); ctx.shadowBlur = 0;
+    for (let i = 0; i < 3; i++) {
+      const pAng = now * 0.004 + (i * Math.PI * 2) / 3;
+      const pxOffset = Math.cos(pAng) * 14;
+      const pyOffset = Math.sin(pAng) * 20;
+      ctx.fillStyle = '#fde047'; ctx.shadowColor = '#fde047'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(pxOffset, pyOffset, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (aName.includes('深渊') || armorItem?.id === 'armor_abyss') {
+    // Abyssal Phantom Void Particle Aura
+    ctx.beginPath();
+    ctx.ellipse(0, 5, 15 + Math.cos(now * 0.004) * 2, 20 + Math.sin(now * 0.004) * 2, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(192, 132, 252, 0.65)'; ctx.lineWidth = 1.8;
+    ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 16;
+    ctx.stroke(); ctx.shadowBlur = 0;
+    for (let i = 0; i < 4; i++) {
+      const pAng = -now * 0.003 + (i * Math.PI * 2) / 4;
+      const pxOffset = Math.cos(pAng) * 13;
+      const pyOffset = Math.sin(pAng) * 18;
+      ctx.fillStyle = '#e879f9'; ctx.shadowColor = '#e879f9'; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(pxOffset, pyOffset, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (aName.includes('狂龙') || armorItem?.id === 'armor_dragon') {
+    // Blazing Dragon Scale Flame Sparks
+    for (let i = 0; i < 3; i++) {
+      const fTime = (now * 0.006 + i * 2.1) % (Math.PI * 2);
+      const fx = Math.sin(fTime * 2 + i) * 12;
+      const fy = 15 - (fTime * 6) % 30;
+      ctx.fillStyle = i % 2 === 0 ? '#f97316' : '#ef4444';
+      ctx.shadowColor = '#f97316'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(fx, fy, 1.5, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (aName.includes('破天') || armorItem?.id === 'armor_heaven') {
+    // Sky-Breaker Lightning Sparks
+    for (let i = 0; i < 3; i++) {
+      const lTime = (now * 0.008 + i * 1.5) % (Math.PI * 2);
+      const lx = Math.cos(lTime * 3) * 13;
+      const ly = Math.sin(lTime * 2) * 16;
+      ctx.fillStyle = '#38bdf8'; ctx.shadowColor = '#38bdf8'; ctx.shadowBlur = 10;
+      ctx.fillRect(lx, ly, 2, 2);
+    }
+  } else if (aName.includes('沙城') || aName.includes('霸者') || armorItem?.id === 'armor_sabak_god') {
+    // Imperial Overlord Golden Ring
+    ctx.beginPath();
+    ctx.ellipse(0, 6, 14, 18, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)'; ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 12;
+    ctx.stroke(); ctx.shadowBlur = 0;
+  }
   ctx.restore();
 
   const drawLimb = (
@@ -747,9 +835,17 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(-w, 0);
-    ctx.lineTo(w, 0);
-    ctx.lineTo(w * taper, length);
-    ctx.lineTo(-w * taper, length);
+    
+    // Organic muscle curves
+    if (isLeg) {
+      ctx.quadraticCurveTo(-w - 1.5, length * 0.4, -w * taper, length);
+      ctx.lineTo(w * taper, length);
+      ctx.quadraticCurveTo(w + 1.5, length * 0.4, w, 0);
+    } else {
+      ctx.quadraticCurveTo(-w - 1.0, length * 0.5, -w * taper, length);
+      ctx.lineTo(w * taper, length);
+      ctx.quadraticCurveTo(w + 1.0, length * 0.5, w, 0);
+    }
     ctx.closePath();
     
     const currentMat = hasArmor ? matType : 'skin';
@@ -766,9 +862,10 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
        drawSpecularGlossOverlay(w, length, currentMat, 0, 0, 0.15);
     }
     
-    if (hasArmor) {
-       ctx.strokeStyle = currentMat === 'metal' ? '#ffffff' : lightColor;
-       ctx.lineWidth = currentMat === 'metal' ? 0.75 : 0.5;
+    // Removed hard limb strokes to prevent "stitched" doll look
+    if (hasArmor && currentMat === 'metal') {
+       ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+       ctx.lineWidth = 0.5;
        ctx.stroke();
     }
 
@@ -812,27 +909,157 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
     ctx.translate(shoulderX, shoulderY);
     ctx.rotate((isLeft ? armAngleL : armAngleR) * Math.PI / 180);
 
-    const armW = isFemale ? 2.5 : 3.5;
-    const upperArmL = 12;
-    const lowerArmL = 14;
+    const armW = isFemale ? 2.0 : 3.0;
+    const upperArmL = 15;
+    const lowerArmL = 17;
 
-    // Shoulder pad
-    if (matType === 'metal') {
+    // Shoulder pad & Pauldrons
+    if (aName || matType === 'metal') {
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(0, 0, armW * 1.8, Math.PI, 0);
-      ctx.lineTo(armW * 2, armW);
-      ctx.lineTo(-armW * 2, armW);
-      ctx.closePath();
+      const pSize = isFemale ? 5.5 : 7.0;
       
-      ctx.fillStyle = getMetalGradient(-armW * 2, 0, armW * 2, 0, armorPrimary, armorSecondary, armorTrim);
-      ctx.fill();
-      
-      drawSpecularGlossOverlay(armW * 2, armW * 2, 'metal', 0, 0, 0.25);
-      
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
+      if (aName.includes('创世神') || armorItem?.id === 'armor_genesis') {
+        // Genesis Divine Winged Pauldrons
+        ctx.beginPath();
+        ctx.moveTo(0, pSize);
+        ctx.quadraticCurveTo(-pSize * 2, -pSize, -pSize * 2.5, -pSize * 2);
+        ctx.lineTo(-pSize * 1.5, -pSize * 2.5);
+        ctx.lineTo(0, -pSize);
+        ctx.lineTo(pSize * 1.5, -pSize * 2.5);
+        ctx.lineTo(pSize * 2.5, -pSize * 2);
+        ctx.quadraticCurveTo(pSize * 2, -pSize, 0, pSize);
+        ctx.closePath();
+        ctx.fillStyle = getMetalGradient(-pSize * 2.5, 0, pSize * 2.5, 0, '#ffffff', '#fef08a', '#d97706');
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+        // Divine Core Gem
+        ctx.fillStyle = '#ffffff'; ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 12;
+        ctx.beginPath(); ctx.arc(0, -pSize * 0.5, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+      } else if (aName.includes('远古魔龙') || armorItem?.id === 'armor_ancient_dragon') {
+        // Primordial Dragon-God Emerald Pauldrons
+        ctx.beginPath();
+        ctx.arc(0, -2, pSize * 1.5, Math.PI, 0);
+        ctx.lineTo(pSize * 1.8, pSize * 1.3);
+        ctx.lineTo(0, pSize * 1.6);
+        ctx.lineTo(-pSize * 1.8, pSize * 1.3);
+        ctx.closePath();
+        ctx.fillStyle = getMetalGradient(-pSize * 1.8, 0, pSize * 1.8, 0, '#059669', '#022c22', '#fef08a');
+        ctx.fill();
+        ctx.strokeStyle = '#fef08a'; ctx.lineWidth = 1.5; ctx.stroke();
+        // Emerald Dragon Core Gem
+        ctx.fillStyle = '#10b981'; ctx.shadowColor = '#34d399'; ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(0, 1, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+      } else if (aName.includes('深渊') || armorItem?.id === 'armor_abyss') {
+        // Abyssal Phantom Void Horn Pauldrons
+        ctx.beginPath();
+        ctx.moveTo(-pSize * 1.6, pSize);
+        ctx.quadraticCurveTo(-pSize * 2.0, -pSize * 1.5, 0, -pSize * 1.8);
+        ctx.quadraticCurveTo(pSize * 2.0, -pSize * 1.5, pSize * 1.6, pSize);
+        ctx.lineTo(0, pSize * 1.2);
+        ctx.closePath();
+        ctx.fillStyle = getMetalGradient(-pSize * 1.8, 0, pSize * 1.8, 0, '#7e22ce', '#2e1065', '#c084fc');
+        ctx.fill();
+        ctx.strokeStyle = '#c084fc'; ctx.lineWidth = 1.3; ctx.stroke();
+        // Abyssal Void Gem
+        ctx.fillStyle = '#e879f9'; ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+      } else if (aName.includes('狂龙') || armorItem?.id === 'armor_dragon') {
+        // Fiery Dragon Horn Spike Pauldrons
+        ctx.beginPath();
+        ctx.arc(0, -1, pSize * 1.4, Math.PI, 0);
+        ctx.lineTo(pSize * 1.7, pSize * 1.4);
+        ctx.lineTo(pSize * 0.8, pSize * 0.8);
+        ctx.lineTo(0, pSize * 1.5);
+        ctx.lineTo(-pSize * 0.8, pSize * 0.8);
+        ctx.lineTo(-pSize * 1.7, pSize * 1.4);
+        ctx.closePath();
+        ctx.fillStyle = getMetalGradient(-pSize * 1.7, 0, pSize * 1.7, 0, '#dc2626', '#450a0a', '#fbbf24');
+        ctx.fill();
+        ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.3; ctx.stroke();
+        // Flame Core
+        ctx.fillStyle = '#f97316'; ctx.shadowColor = '#f97316'; ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(0, 1, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+      } else if (aName.includes('破天') || armorItem?.id === 'armor_heaven') {
+        // Celestial Lightning Blade Pauldrons
+        ctx.beginPath();
+        ctx.arc(0, -2, pSize * 1.3, Math.PI, 0);
+        ctx.lineTo(pSize * 1.6, pSize * 1.1);
+        ctx.lineTo(0, pSize * 1.3);
+        ctx.lineTo(-pSize * 1.6, pSize * 1.1);
+        ctx.closePath();
+        ctx.fillStyle = getMetalGradient(-pSize * 1.6, 0, pSize * 1.6, 0, '#0284c7', '#0c4a6e', '#7dd3fc');
+        ctx.fill();
+        ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1.3; ctx.stroke();
+        // Celestial Lightning Gem
+        ctx.fillStyle = '#38bdf8'; ctx.shadowColor = '#38bdf8'; ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(0, 0, 2.0, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+      } else if (aName.includes('沙城') || aName.includes('霸者') || armorItem?.id === 'armor_sabak_god') {
+        // Imperial Gold Winged Dragon Pauldrons
+        ctx.beginPath();
+        ctx.arc(0, -1, pSize * 1.3, Math.PI, 0);
+        ctx.lineTo(pSize * 1.6, pSize);
+        ctx.lineTo(0, pSize * 1.4);
+        ctx.lineTo(-pSize * 1.6, pSize);
+        ctx.closePath();
+        ctx.fillStyle = getMetalGradient(-pSize * 1.6, 0, pSize * 1.6, 0, '#f59e0b', '#78350f', '#fef08a');
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke();
+        
+        // Dragon Crest Gem
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath(); ctx.arc(0, 2, 2, 0, Math.PI * 2); ctx.fill();
+      } else if (aName.includes('战神') || aName.includes('圣战') || armorItem?.id === 'armor_heavy_armor') {
+        // Crimson Lion-Head Heavy Pauldrons
+        ctx.beginPath();
+        ctx.arc(0, -1, pSize * 1.2, Math.PI, 0);
+        ctx.lineTo(pSize * 1.4, pSize * 1.2);
+        ctx.lineTo(-pSize * 1.4, pSize * 1.2);
+        ctx.closePath();
+        ctx.fillStyle = getMetalGradient(-pSize * 1.4, 0, pSize * 1.4, 0, '#b91c1c', '#450a0a', '#fde047');
+        ctx.fill();
+        ctx.strokeStyle = '#fde047'; ctx.lineWidth = 1.2; ctx.stroke();
+      } else if (!aName.includes('布衣')) {
+        // Massive Epic Golden/Spiked Pauldron for Warrior default
+        if (prof === 'warrior') {
+            ctx.beginPath();
+            ctx.arc(0, -2, armW * 2.8, Math.PI, 0); // Very large round top
+            ctx.lineTo(armW * 3, armW * 2);
+            ctx.lineTo(armW * 1.5, armW * 3);
+            ctx.lineTo(-armW * 1.5, armW * 3);
+            ctx.lineTo(-armW * 3, armW * 2);
+            ctx.closePath();
+            ctx.fillStyle = getMetalGradient(-armW * 3, 0, armW * 3, 0, '#d97706', '#7f1d1d', '#fef08a');
+            ctx.fill();
+            ctx.strokeStyle = '#fef08a'; ctx.lineWidth = 1.5; ctx.stroke();
+
+            // Giant Spikes
+            ctx.fillStyle = getMetalGradient(0, -5, 0, -armW * 5, '#fef08a', '#d97706', '#ffffff');
+            ctx.beginPath(); ctx.moveTo(-armW * 1.5, -armW); ctx.lineTo(0, -armW * 4); ctx.lineTo(armW * 1.5, -armW); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(-armW * 2.5, 0); ctx.lineTo(-armW * 3, -armW * 3); ctx.lineTo(-armW, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(armW * 2.5, 0); ctx.lineTo(armW * 3, -armW * 3); ctx.lineTo(armW, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+            
+            // Red gem center
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath(); ctx.arc(0, armW, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#fef08a'; ctx.stroke();
+        } else {
+            // Standard Steel Pauldron
+            ctx.beginPath();
+            ctx.arc(0, 0, armW * 1.8, Math.PI, 0);
+            ctx.lineTo(armW * 2, armW);
+            ctx.lineTo(-armW * 2, armW);
+            ctx.closePath();
+            ctx.fillStyle = getMetalGradient(-armW * 2, 0, armW * 2, 0, armorPrimary, armorSecondary, armorTrim);
+            ctx.fill();
+            drawSpecularGlossOverlay(armW * 2, armW * 2, 'metal', 0, 0, 0.25);
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke();
+        }
+      }
       ctx.restore();
     }
 
@@ -858,9 +1085,9 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
       ctx.rotate(weaponAngle);
       
       const wName = weaponItem.name || '';
-      let wGlow = '';
       const wRefine = weaponItem.refineLevel || 0;
-      if (wRefine >= 10) {
+      let wGlow = '';
+      if (wRefine >= 1 || weaponItem.rarity === 'mythic' || weaponItem.rarity === 'legendary') {
         if (weaponItem.rarity === 'mythic') wGlow = '#ef4444';
         else if (weaponItem.rarity === 'legendary') wGlow = '#f59e0b';
         else if (weaponItem.rarity === 'epic') wGlow = '#a855f7';
@@ -869,53 +1096,268 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
 
       if (wGlow) {
         ctx.shadowColor = wGlow;
-        ctx.shadowBlur = 15 + Math.sin(now * 0.01) * 10;
+        ctx.shadowBlur = 12 + Math.sin(now * 0.01) * 8;
       }
 
-      if (wName.includes('剑') || wName.includes('裁决') || prof === 'warrior') {
-        // Greatsword / Blade
+      if (wName.includes('创世神') || weaponItem?.id === 'weapon_genesis') {
+        // 🌟 创世神剑 (Genesis Divine Sword)
         ctx.save();
-        ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(2, 0); ctx.lineTo(3, -35); ctx.lineTo(0, -42); ctx.lineTo(-3, -35); ctx.closePath(); 
         
+        // Radiant Divine Aura
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 20 + Math.sin(now * 0.01) * 10;
+        
+        // Blade
+        ctx.beginPath();
+        ctx.moveTo(-5, 0); 
+        ctx.lineTo(5, 0); 
+        ctx.lineTo(8, -50); 
+        ctx.lineTo(0, -70); 
+        ctx.lineTo(-8, -50);
+        ctx.closePath();
+        
+        const bGrad = ctx.createLinearGradient(0, 0, 0, -70);
+        bGrad.addColorStop(0, '#fef08a');
+        bGrad.addColorStop(0.5, '#ffffff');
+        bGrad.addColorStop(1, '#60a5fa');
+        ctx.fillStyle = bGrad;
+        ctx.fill();
+
+        // Glowing center core
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -65); ctx.stroke();
+
+        // Ethereal floating shards
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowBlur = 5;
+        for(let i=0; i<3; i++) {
+           const phase = (now * 0.005 + i * 2) % (Math.PI * 2);
+           const ox = Math.cos(phase) * 12;
+           const oy = -20 - i*15 + Math.sin(phase) * 5;
+           ctx.beginPath(); ctx.arc(ox, oy, 1.5, 0, Math.PI*2); ctx.fill();
+        }
+
+        // Crossguard - Angelic wings
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.moveTo(0, -5);
+        ctx.quadraticCurveTo(15, -15, 20, -5);
+        ctx.lineTo(5, 5);
+        ctx.lineTo(-5, 5);
+        ctx.lineTo(-20, -5);
+        ctx.quadraticCurveTo(-15, -15, 0, -5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#d97706'; ctx.lineWidth = 1; ctx.stroke();
+        
+        // Handle
+        ctx.fillStyle = '#d97706'; ctx.fillRect(-2, 5, 4, 15);
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, 20, 4, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        
+        ctx.restore();
+      } else if (wName.includes('屠龙')) {
+        // 🗡️✨ 屠龙宝刀 (Dragon Slayer Broadsword)
+        ctx.save();
+        ctx.beginPath();
+        // Massive heavy broadsword shape
+        ctx.moveTo(-10, 5); 
+        ctx.lineTo(10, 5); 
+        ctx.lineTo(15, -45); 
+        ctx.lineTo(18, -60);
+        ctx.lineTo(0, -75);
+        ctx.lineTo(-8, -60); 
+        ctx.lineTo(-6, -45); 
+        ctx.closePath();
+        
+        const bladeGrad = ctx.createLinearGradient(-10, 0, 15, 0);
+        bladeGrad.addColorStop(0, '#1e293b');
+        bladeGrad.addColorStop(0.5, '#475569');
+        bladeGrad.addColorStop(0.8, '#cbd5e1');
+        bladeGrad.addColorStop(1, '#f8fafc');
+        ctx.fillStyle = bladeGrad;
+        ctx.fill();
+
+        // Blood groove & Edge
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(0, 5); ctx.lineTo(0, -75); ctx.stroke();
+        
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(10, 5); ctx.lineTo(15, -45); ctx.lineTo(18, -60); ctx.lineTo(0, -75); ctx.stroke();
+
+        // Ornate dragon engravings
+        ctx.strokeStyle = '#d97706';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for(let py = -10; py >= -50; py-=10) {
+           ctx.moveTo(-2, py);
+           ctx.quadraticCurveTo(0, py - 5, -5, py - 10);
+        }
+        ctx.stroke();
+
+        // Massive Dragon Head Crossguard
+        ctx.fillStyle = '#b45309';
+        ctx.beginPath(); ctx.moveTo(-16, -2); ctx.lineTo(16, -2); ctx.lineTo(20, 8); ctx.lineTo(-20, 8); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#fef08a'; ctx.lineWidth = 1.5; ctx.stroke();
+        
+        // Dragon eyes
+        ctx.fillStyle = '#ef4444';
+        ctx.shadowColor = '#ff0000';
+        ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(-8, 3, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(8, 3, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Long handle
+        ctx.fillStyle = '#450a0a'; ctx.fillRect(-3, 8, 6, 18);
+        ctx.strokeStyle = '#fcd34d'; ctx.lineWidth = 1;
+        for (let y = 10; y <= 24; y += 3) {
+           ctx.beginPath(); ctx.moveTo(-3, y); ctx.lineTo(3, y+2); ctx.stroke();
+        }
+
+        // Heavy Pommel
+        ctx.fillStyle = '#b45309'; 
+        ctx.beginPath(); ctx.arc(0, 28, 6, 0, Math.PI * 2); ctx.fill(); 
+        ctx.strokeStyle = '#fef08a'; ctx.stroke();
+
+        ctx.restore();
+      } else if (wName.includes('裁决')) {
+        // 🔱 裁决之杖 (Judgment Black-Iron Mace)
+        ctx.save();
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(-3, -32, 6, 42);
+        ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1; ctx.strokeRect(-3, -32, 6, 42);
+
+        ctx.fillStyle = '#d97706';
+        ctx.fillRect(-4, -24, 8, 3);
+        ctx.fillRect(-4, -12, 8, 3);
+        ctx.fillRect(-4, 0, 8, 3);
+
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.moveTo(-8, -32); ctx.lineTo(8, -32); ctx.lineTo(10, -42); ctx.lineTo(0, -48); ctx.lineTo(-10, -42);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#fde047'; ctx.lineWidth = 1.5; ctx.stroke();
+
+        ctx.fillStyle = '#e2e8f0';
+        ctx.beginPath(); ctx.moveTo(-10, -37); ctx.lineTo(-15, -37); ctx.lineTo(-10, -40); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(10, -37); ctx.lineTo(15, -37); ctx.lineTo(10, -40); ctx.fill();
+
+        ctx.fillStyle = 'rgba(249, 115, 22, 0.4)';
+        ctx.beginPath(); ctx.arc(0, -38, 12, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      } else if (wName.includes('炼狱')) {
+        // 🪓 炼狱巨斧 (Purgatory Double-Headed Axe)
+        ctx.save();
+        ctx.fillStyle = '#334155'; ctx.fillRect(-2, -30, 4, 45);
+        ctx.fillStyle = '#cbd5e1'; ctx.fillRect(-0.5, -30, 1, 45);
+
+        ctx.beginPath();
+        ctx.moveTo(-2, -15); ctx.quadraticCurveTo(-22, -35, -18, -42); ctx.lineTo(-2, -30);
+        ctx.closePath();
+        ctx.fillStyle = getMetalGradient(-22, -30, 0, -30, '#94a3b8', '#0f172a', '#ffffff');
+        ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(2, -15); ctx.quadraticCurveTo(22, -35, 18, -42); ctx.lineTo(2, -30);
+        ctx.closePath();
+        ctx.fillStyle = getMetalGradient(0, -30, 22, -30, '#94a3b8', '#0f172a', '#ffffff');
+        ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.stroke();
+
+        ctx.fillStyle = '#dc2626';
+        ctx.beginPath(); ctx.arc(0, -26, 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fde047';
+        ctx.beginPath(); ctx.moveTo(-2, -30); ctx.lineTo(2, -30); ctx.lineTo(0, -48); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      } else if (wName.includes('斩马刀') || wName.includes('刀')) {
+        // ⚔️ 斩马刀 (Chopper)
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(-2, 2); ctx.lineTo(2, 2); ctx.lineTo(4, -30); ctx.quadraticCurveTo(8, -38, 0, -42); ctx.lineTo(-1, -30);
+        ctx.closePath();
+        ctx.fillStyle = getMetalGradient(-2, 0, 4, 0, '#cbd5e1', '#1e293b', '#ffffff');
+        ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+
+        ctx.fillStyle = '#92400e'; ctx.fillRect(-1.5, 2, 3, 8);
+        ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 12, 3, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      } else if (wName.includes('乌木剑')) {
+        // 🗡️ 乌木剑 (Ebony Sword)
+        ctx.save();
+        ctx.fillStyle = '#1e1b4b';
+        ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(2, 0); ctx.lineTo(2.5, -32); ctx.lineTo(0, -38); ctx.lineTo(-2.5, -32); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1; ctx.stroke();
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath(); ctx.arc(0, -38, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      } else if (wName.includes('木剑')) {
+        // 🗡️ 木剑 (Wooden Sword)
+        ctx.save();
+        ctx.fillStyle = '#b45309';
+        ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(2, 0); ctx.lineTo(2, -30); ctx.lineTo(0, -35); ctx.lineTo(-2, -30); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#78350f'; ctx.lineWidth = 0.8; ctx.stroke();
+        ctx.fillStyle = '#92400e'; ctx.fillRect(-5, -2, 10, 2);
+        ctx.restore();
+      } else if (wName.includes('骨玉') || wName.includes('权杖')) {
+        // 🪄 骨玉权杖 (Bone Jade Staff)
+        ctx.save();
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(-2, -8, 4, 42);
+        ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 0.8; ctx.strokeRect(-2, -8, 4, 42);
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.shadowColor = '#0284c7'; ctx.shadowBlur = 15;
+        ctx.beginPath(); ctx.arc(0, -14, 6.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-1.5, -15.5, 2, 0, Math.PI * 2); ctx.fill();
+
+        const ringAng = now * 0.004;
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(0, -14, 10, 4, ringAng, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      } else if (wName.includes('噬魂')) {
+        // 🔮✨ 噬魂法杖 (Soul Eater Staff)
+        ctx.save();
+        ctx.fillStyle = '#312e81'; ctx.fillRect(-2, -10, 4, 45);
+
+        ctx.fillStyle = '#a855f7';
+        ctx.shadowColor = '#7e22ce'; ctx.shadowBlur = 18;
+        ctx.beginPath(); ctx.arc(0, -16, 7.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#f0abfc'; ctx.beginPath(); ctx.arc(-2, -18, 2.5, 0, Math.PI * 2); ctx.fill();
+
+        ctx.strokeStyle = '#e879f9'; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-6, -16); ctx.lineTo(-2, -22); ctx.lineTo(3, -12); ctx.lineTo(6, -16);
+        ctx.stroke();
+        ctx.restore();
+      } else if (wName.includes('扇') || wName.includes('逍遥')) {
+        // 🪭 逍遥扇 (Xiaoyao Fan)
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, -8, 22, -Math.PI * 0.75, -Math.PI * 0.25);
+        ctx.lineTo(0, -2);
+        ctx.closePath();
+        ctx.fillStyle = '#065f46'; ctx.fill();
+        ctx.strokeStyle = '#fde047'; ctx.lineWidth = 1.5; ctx.stroke();
+
+        ctx.fillStyle = '#fde047';
+        for (let f = -3; f <= 3; f++) {
+          const fAng = -Math.PI / 2 + (f * Math.PI) / 12;
+          ctx.fillRect(Math.cos(fAng) * 16 - 1, -8 + Math.sin(fAng) * 16 - 1, 2, 2);
+        }
+        ctx.restore();
+      } else {
+        // Default Sword
+        ctx.save();
+        ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(2, 0); ctx.lineTo(3, -34); ctx.lineTo(0, -40); ctx.lineTo(-3, -34); ctx.closePath();
         ctx.fillStyle = getMetalGradient(-3, 0, 3, 0, '#94a3b8', '#111827', '#ffffff');
         ctx.fill();
-        
-        drawSpecularGlossOverlay(3, 42, 'metal', 0, -20, -0.12);
-        
-        ctx.fillStyle = '#ffffff'; // Edge highlight
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(2, 0); ctx.lineTo(3, -35); ctx.lineTo(0, -42); ctx.closePath(); ctx.fill();
-        
-        ctx.fillStyle = '#b45309'; // Hilt
-        ctx.fillRect(-1.5, 0, 3, 10);
-        ctx.fillStyle = '#f59e0b'; // Crossguard
-        ctx.fillRect(-6, -2, 12, 3);
-        // Pommel
-        ctx.beginPath(); ctx.arc(0, 11, 2.5, 0, Math.PI * 2); ctx.fill();
+        drawSpecularGlossOverlay(3, 40, 'metal', 0, -20, -0.12);
+        ctx.fillStyle = '#b45309'; ctx.fillRect(-1.5, 0, 3, 9);
+        ctx.fillStyle = '#f59e0b'; ctx.fillRect(-6, -2, 12, 3);
         ctx.restore();
-      } else if (prof === 'mage') {
-        // Staff
-        ctx.fillStyle = '#78350f'; // Wood
-        ctx.fillRect(-1.5, -8, 3, 40);
-        ctx.fillStyle = '#92400e'; 
-        ctx.fillRect(0, -8, 1.5, 40);
-        
-        // Gemstone
-        ctx.fillStyle = wGlow || '#38bdf8';
-        ctx.beginPath(); ctx.arc(0, -12, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath(); ctx.arc(-1, -13, 1.5, 0, Math.PI * 2); ctx.fill();
-        
-        // Ornaments
-        ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(-4, -8); ctx.quadraticCurveTo(0, -18, 4, -8); ctx.stroke();
-      } else {
-        // Taoist Sword / Fan
-        ctx.fillStyle = '#cbd5e1';
-        ctx.beginPath(); ctx.moveTo(-1.5, 0); ctx.lineTo(1.5, 0); ctx.lineTo(1, -25); ctx.lineTo(0, -28); ctx.lineTo(-1, -25); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(-1, 0, 2, 8);
-        ctx.fillStyle = '#10b981';
-        ctx.fillRect(-4, -1, 8, 2);
       }
 
       ctx.restore();
@@ -985,6 +1427,68 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
     ctx.restore();
   }
 
+  // 1.5. RADIANT 3D WINGS SYSTEM (光翼翅膀系统)
+  const wingLvl = character.wingLevel || 0;
+  if (wingLvl > 0 && !isMounted) {
+    const flap = Math.sin(now * 0.005) * 0.16;
+    const wingY = -12 + chestOffsetY;
+
+    ctx.save();
+    let wPrimary = '#38bdf8';
+    let wSecondary = '#0284c7';
+    let wGlow = '#60a5fa';
+
+    if (wingLvl >= 7) {
+      wPrimary = '#ef4444'; wSecondary = '#991b1b'; wGlow = '#f59e0b';
+    } else if (wingLvl >= 4) {
+      wPrimary = '#f59e0b'; wSecondary = '#b45309'; wGlow = '#fef08a';
+    }
+
+    // Left Wing
+    ctx.save();
+    ctx.translate(-8, wingY);
+    ctx.rotate(-0.3 + flap);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(-26, -32, -42, -14);
+    ctx.quadraticCurveTo(-28, 2, 0, 8);
+    ctx.fillStyle = wPrimary;
+    ctx.shadowColor = wGlow; ctx.shadowBlur = 15;
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+
+    for (let f = 1; f <= 3; f++) {
+      ctx.beginPath();
+      ctx.moveTo(-5 * f, -2);
+      ctx.quadraticCurveTo(-20 * (f / 3) - 10, -22, -32 * (f / 3) - 6, -10);
+      ctx.strokeStyle = wSecondary; ctx.lineWidth = 1.2; ctx.stroke();
+    }
+    ctx.restore();
+
+    // Right Wing
+    ctx.save();
+    ctx.translate(8, wingY);
+    ctx.rotate(0.3 - flap);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(26, -32, 42, -14);
+    ctx.quadraticCurveTo(28, 2, 0, 8);
+    ctx.fillStyle = wPrimary;
+    ctx.shadowColor = wGlow; ctx.shadowBlur = 15;
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+
+    for (let f = 1; f <= 3; f++) {
+      ctx.beginPath();
+      ctx.moveTo(5 * f, -2);
+      ctx.quadraticCurveTo(20 * (f / 3) + 10, -22, 32 * (f / 3) + 6, -10);
+      ctx.strokeStyle = wSecondary; ctx.lineWidth = 1.2; ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.restore();
+  }
+
   // 2. LEFT ARM (Background)
   drawArm(true);
 
@@ -1004,7 +1508,7 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
   const breathY = 1 + breathing * 0.01;
   ctx.scale(breathX, breathY);
   
-  const chestY = -14;
+  const chestY = -18;
   const pelvisY = 2;
   const waistW = isFemale ? 4 : 5.5;
   const shoulderW = isFemale ? 7 : 9.5;
@@ -1037,9 +1541,11 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
   }
 
   // Torso Outline
-  ctx.strokeStyle = matType === 'metal' ? '#ffffff' : armorTrim;
-  ctx.lineWidth = matType === 'metal' ? 1.5 : 1.2;
-  ctx.stroke();
+  if (matType === 'metal') {
+     ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+     ctx.lineWidth = 1.0;
+     ctx.stroke();
+  }
 
   // Folds for Cloth
   if (matType === 'cloth') {
@@ -1087,6 +1593,67 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
      ctx.restore();
   }
 
+  // --- CHEST INSIGNIA & EMBLEM FOR DISTINCT ARMORS ---
+  if (aName.includes('创世神') || armorItem?.id === 'armor_genesis') {
+    ctx.save();
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#fef08a'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, chestY + 2); ctx.lineTo(5, chestY + 7); ctx.lineTo(0, chestY + 12); ctx.lineTo(-5, chestY + 7);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fef08a'; ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(0, chestY + 7, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else if (aName.includes('远古魔龙') || armorItem?.id === 'armor_ancient_dragon') {
+    ctx.save();
+    ctx.fillStyle = '#fde047'; ctx.strokeStyle = '#059669'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, chestY + 3); ctx.lineTo(4, chestY + 8); ctx.lineTo(0, chestY + 12); ctx.lineTo(-4, chestY + 8);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#10b981'; ctx.shadowColor = '#34d399'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(0, chestY + 7.5, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else if (aName.includes('深渊') || armorItem?.id === 'armor_abyss') {
+    ctx.save();
+    ctx.fillStyle = '#c084fc'; ctx.strokeStyle = '#3b0764'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, chestY + 7.5, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e879f9'; ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(0, chestY + 7.5, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else if (aName.includes('狂龙') || armorItem?.id === 'armor_dragon') {
+    ctx.save();
+    ctx.fillStyle = '#f59e0b'; ctx.strokeStyle = '#7f1d1d'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, chestY + 2); ctx.lineTo(3.5, chestY + 7); ctx.lineTo(0, chestY + 11); ctx.lineTo(-3.5, chestY + 7);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ef4444'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(0, chestY + 6.5, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else if (aName.includes('破天') || armorItem?.id === 'armor_heaven') {
+    ctx.save();
+    ctx.fillStyle = '#38bdf8'; ctx.strokeStyle = '#0c4a6e'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, chestY + 3); ctx.lineTo(3, chestY + 7.5); ctx.lineTo(0, chestY + 11); ctx.lineTo(-3, chestY + 7.5);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#7dd3fc'; ctx.shadowColor = '#38bdf8'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(0, chestY + 7, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else if (aName.includes('沙城') || aName.includes('霸者') || armorItem?.id === 'armor_sabak_god') {
+    ctx.save();
+    ctx.fillStyle = '#fef08a'; ctx.strokeStyle = '#78350f'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, chestY + 7, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#dc2626'; ctx.beginPath(); ctx.arc(0, chestY + 7, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else if (aName.includes('战神') || aName.includes('圣战') || armorItem?.id === 'armor_heavy_armor') {
+    ctx.save();
+    ctx.fillStyle = '#fde047'; ctx.strokeStyle = '#7f1d1d'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-2.5, chestY + 4); ctx.lineTo(2.5, chestY + 4); ctx.lineTo(0, chestY + 9);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
   // Belt
   ctx.fillStyle = armorSecondary;
   ctx.fillRect(-waistW - 1, pelvisY - 2, waistW * 2 + 2, 4);
@@ -1109,7 +1676,7 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
   ctx.translate(0, chestOffsetY - 16);
   ctx.rotate(spineAngle * 0.7); // Head turns slightly with spine
 
-  const headRadius = isFemale ? 5.5 : 6.5;
+  const headRadius = isFemale ? 4.0 : 4.5;
   const absHeadX = px;
   const absHeadY = playerCenterY + frameOffsetY + chestOffsetY - 16;
   
@@ -1264,35 +1831,73 @@ export function drawCharacterAvatar(options: DrawCharacterOptions) {
 
   // Helmet / Hair
   if (helmetItem) {
-    let helmColor = armorPrimary, helmTrim = armorTrim;
-    if (helmetItem.name?.includes('黑铁')) { helmColor = '#1e293b'; helmTrim = '#f59e0b'; }
-    
-    if (prof === 'warrior') {
-      ctx.save();
-      ctx.beginPath(); ctx.arc(0, -1, headRadius + 1.5, Math.PI * 0.7, Math.PI * 2.3);
-      ctx.fillStyle = getMetalGradient(-headRadius-1.5, 0, headRadius+1.5, 0, helmColor, '#020205', helmTrim); 
+    const hName = helmetItem.name || '';
+    ctx.save();
+
+    if (hName.includes('黑铁') || hName.includes('铁')) {
+      // 🛡️ 黑铁头盔 (Black Iron Heavy Horned Helmet)
+      ctx.beginPath();
+      ctx.arc(0, -1, headRadius + 1.8, Math.PI * 0.75, Math.PI * 2.25);
+      ctx.fillStyle = getMetalGradient(-headRadius - 1.8, 0, headRadius + 1.8, 0, '#1e293b', '#020617', '#f59e0b');
       ctx.fill();
-      
-      drawSpecularGlossOverlay(headRadius+1.5, headRadius, 'metal', 0, -2, 0.2);
-      
+      drawSpecularGlossOverlay(headRadius + 1.8, headRadius, 'metal', 0, -2, 0.2);
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.0; ctx.stroke();
-      ctx.restore();
-    } else if (prof === 'mage') {
+
+      // Nose Guard & Golden Horn Spikes
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath(); ctx.moveTo(-0.8, -headRadius); ctx.lineTo(0.8, -headRadius); ctx.lineTo(0, -headRadius + 5); ctx.closePath(); ctx.fill();
+
+      // Dual Horn Spikes
+      ctx.beginPath(); ctx.moveTo(-headRadius - 1, -2); ctx.quadraticCurveTo(-headRadius - 6, -10, -headRadius - 2, -14); ctx.lineTo(-headRadius + 2, -5); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(headRadius + 1, -2); ctx.quadraticCurveTo(headRadius + 6, -10, headRadius + 2, -14); ctx.lineTo(headRadius - 2, -5); ctx.fill();
+    } else if (hName.includes('金冠') || hName.includes('霸者') || hName.includes('战神') || helmetItem.rarity === 'mythic' || helmetItem.rarity === 'legendary') {
+      // 👑 霸者/金冠 (Sovereign Horned Golden Crown)
+      ctx.beginPath();
+      ctx.arc(0, -1, headRadius + 2, Math.PI * 0.7, Math.PI * 2.3);
+      ctx.fillStyle = getMetalGradient(-headRadius - 2, 0, headRadius + 2, 0, '#f59e0b', '#78350f', '#fef08a');
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke();
+
+      // Forehead Ruby Gem
+      ctx.fillStyle = '#ef4444';
+      ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.arc(0, -headRadius, 3, 0, Math.PI * 2); ctx.fill();
+
+      // Golden Crown Wings
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath(); ctx.moveTo(-headRadius, -2); ctx.quadraticCurveTo(-headRadius - 8, -14, -headRadius - 4, -20); ctx.lineTo(-headRadius + 2, -6); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(headRadius, -2); ctx.quadraticCurveTo(headRadius + 8, -14, headRadius + 4, -20); ctx.lineTo(headRadius - 2, -6); ctx.fill();
+    } else if (prof === 'mage' || prof === 'taoist') {
+      // 🧙 法帽/道冠 (Arcane Hood / Zen Cap)
+      const capColor = prof === 'mage' ? '#312e81' : '#064e3b';
+      const capTrim = prof === 'mage' ? '#c084fc' : '#6ee7b7';
+
       ctx.beginPath(); ctx.arc(0, -2, headRadius + 2, Math.PI * 0.8, Math.PI * 2.2);
-      ctx.fillStyle = getCylinderGradient(helmColor, '#000', helmTrim, headRadius+2); ctx.fill();
-      ctx.fillStyle = helmTrim; ctx.beginPath(); ctx.arc(0, -headRadius-2, 3, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = getCylinderGradient(capColor, '#000', capTrim, headRadius + 2); ctx.fill();
+
+      // Forehead Seal Gem
+      ctx.fillStyle = capTrim;
+      ctx.beginPath(); ctx.arc(0, -headRadius - 2, 3, 0, Math.PI * 2); ctx.fill();
     } else {
-      ctx.beginPath(); ctx.arc(0, -headRadius, headRadius + 1, Math.PI, Math.PI * 2);
-      ctx.fillStyle = helmColor; ctx.fill();
-      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, -headRadius-2, 2, 0, Math.PI*2); ctx.fill();
+      // Standard Steel Helmet
+      ctx.beginPath(); ctx.arc(0, -1, headRadius + 1.5, Math.PI * 0.75, Math.PI * 2.25);
+      ctx.fillStyle = getMetalGradient(-headRadius - 1.5, 0, headRadius + 1.5, 0, '#475569', '#0f172a', '#cbd5e1');
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.0; ctx.stroke();
     }
+    ctx.restore();
   } else {
-    const hairColor = prof === 'warrior' ? '#7f1d1d' : prof === 'mage' ? '#312e81' : '#171717';
+    // No helmet, show hair
+    const hairColor = '#171717'; // Deep black hair for traditional wuxia look
     ctx.fillStyle = hairColor;
     if (!isFemale) {
       if (prof === 'warrior') {
-        ctx.fillStyle = '#ef4444'; ctx.fillRect(-headRadius - 0.5, -4, headRadius * 2 + 1, 3);
-        ctx.beginPath(); ctx.arc(0, -3, headRadius + 0.5, Math.PI, Math.PI*2); ctx.fillStyle = hairColor; ctx.fill();
+        // Black topknot with gold hairband
+        ctx.beginPath(); ctx.arc(0, -3, headRadius + 0.5, Math.PI, Math.PI*2); ctx.fill(); // Base hair
+        ctx.beginPath(); ctx.arc(0, -headRadius - 2, 3, 0, Math.PI*2); ctx.fill(); // Topknot ball
+        // Gold hairpin / ring
+        ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(-3.5, -headRadius - 2); ctx.lineTo(3.5, -headRadius - 2); ctx.stroke();
       } else {
         ctx.beginPath(); ctx.arc(0, -headRadius - 2, 4, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(0, -2, headRadius + 0.5, Math.PI, Math.PI*2); ctx.fill();

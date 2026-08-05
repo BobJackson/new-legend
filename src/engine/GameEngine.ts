@@ -458,6 +458,7 @@ export class GameEngine {
     }
 
     this.syncClassSkills();
+    this.syncItemsWithDatabase();
     this.recalculateStats();
     this.spawnMonstersForMap(this.currentMapId);
     this.refreshSabakInfo();
@@ -484,6 +485,59 @@ export class GameEngine {
         this.character.equippedSkills.push(tmpl.id);
       }
     });
+  }
+
+  public syncItemsWithDatabase() {
+    if (!this.character) return;
+
+    // 1. Sync inventory items with ITEM_DATABASE templates
+    if (this.character.inventory) {
+      this.character.inventory = this.character.inventory.map(item => {
+        if (!item) return null;
+        const dbItem = ITEM_DATABASE[item.id];
+        if (dbItem) {
+          return {
+            ...item,
+            name: dbItem.name,
+            icon: dbItem.icon,
+            type: dbItem.type,
+            slot: dbItem.slot || item.slot,
+            description: dbItem.description,
+            priceGold: dbItem.priceGold ?? item.priceGold,
+            priceIngot: dbItem.priceIngot ?? item.priceIngot,
+            recycleGold: dbItem.recycleGold ?? item.recycleGold,
+            recycleIngot: dbItem.recycleIngot ?? item.recycleIngot,
+            recycleExp: dbItem.recycleExp ?? item.recycleExp,
+          };
+        }
+        return item;
+      });
+    }
+
+    // 2. Sync equipment items with ITEM_DATABASE templates
+    if (this.character.equipment) {
+      (Object.keys(this.character.equipment) as EquipmentSlot[]).forEach(slotKey => {
+        const equip = this.character.equipment[slotKey];
+        if (equip) {
+          const dbItem = ITEM_DATABASE[equip.id];
+          if (dbItem) {
+            this.character.equipment[slotKey] = {
+              ...equip,
+              name: dbItem.name,
+              icon: dbItem.icon,
+              type: dbItem.type,
+              slot: dbItem.slot || equip.slot,
+              description: dbItem.description,
+              priceGold: dbItem.priceGold ?? equip.priceGold,
+              priceIngot: dbItem.priceIngot ?? equip.priceIngot,
+              recycleGold: dbItem.recycleGold ?? equip.recycleGold,
+              recycleIngot: dbItem.recycleIngot ?? equip.recycleIngot,
+              recycleExp: dbItem.recycleExp ?? equip.recycleExp,
+            };
+          }
+        }
+      });
+    }
   }
 
   public initCombatDisplaySettings() {
@@ -688,14 +742,63 @@ export class GameEngine {
       };
     }
     if (settings.autoRecycleKeepOwnProfession === undefined) settings.autoRecycleKeepOwnProfession = true;
+    if (settings.autoRecycleSpecialRings === undefined) settings.autoRecycleSpecialRings = false;
   }
 
-  public autoRecycleEquipment(isFullTrigger: boolean = false): number {
+  public recycleSpecialRings(): number {
+    const specialRingIds = ['ring_paralysis', 'ring_bodyguard', 'ring_resurrection'];
+    let recycledCount = 0;
+    let totalGold = 0;
+    let totalIngot = 0;
+    let totalExp = 0;
+
+    this.character.inventory = this.character.inventory.map(item => {
+      if (!item) return null;
+      if (item.type === 'special_ring' || specialRingIds.includes(item.id)) {
+        recycledCount += 1;
+        totalGold += item.recycleGold || 250000;
+        totalIngot += item.recycleIngot || 800;
+        totalExp += item.recycleExp || 500000;
+        return null;
+      }
+      return item;
+    });
+
+    if (recycledCount > 0) {
+      this.character.gold += totalGold;
+      this.character.ingot += totalIngot;
+      this.character.exp += totalExp;
+
+      this.trackAchievementProgress('forgeTimes', recycledCount);
+      this.trackAchievementProgress('totalGoldEarned', totalGold);
+
+      this.addParticle(
+        this.character.x,
+        this.character.y,
+        'text_gold',
+        `【特戒一键回收】成功回收 ${recycledCount} 枚特戒 +${totalIngot}元宝 +${totalGold}金币!`
+      );
+      soundFX.playGold();
+      this.notify();
+    } else {
+      this.addParticle(
+        this.character.x,
+        this.character.y,
+        'text_info',
+        '背包中未找到可回收的特戒（麻痹/护身/复活）！'
+      );
+    }
+
+    return recycledCount;
+  }
+
+  public autoRecycleEquipment(isFullTrigger: boolean = false, includeSpecialRings: boolean = false): number {
     this.initAutoSettings();
     const settings = this.character.autoBattleSettings;
-    if (!settings.autoRecycleEnabled && !isFullTrigger) return 0;
+    if (!settings.autoRecycleEnabled && !isFullTrigger && !includeSpecialRings) return 0;
 
-    const equipmentTypes = ['weapon', 'armor', 'helmet', 'necklace', 'ring', 'bracelet', 'belt', 'boots'];
+    const equipmentTypes = ['weapon', 'armor', 'helmet', 'necklace', 'ring', 'bracelet', 'belt', 'boots', 'special_ring'];
+    const specialRingIds = ['ring_paralysis', 'ring_bodyguard', 'ring_resurrection'];
 
     let recycledCount = 0;
     let totalGold = 0;
@@ -706,13 +809,20 @@ export class GameEngine {
       if (!item) return null;
       if (!equipmentTypes.includes(item.type)) return item;
 
-      // Check rarity filter
-      const shouldRecycleRarity = !!settings.autoRecycleRarities[item.rarity];
-      if (!shouldRecycleRarity) return item;
+      const isSpecialRing = item.type === 'special_ring' || specialRingIds.includes(item.id);
 
-      // Check profession filter
-      if (settings.autoRecycleKeepOwnProfession && item.reqProfession === this.character.profession) {
-        return item; // Keep player's own class equipment
+      if (isSpecialRing) {
+        const canRecycleSpecial = includeSpecialRings || !!settings.autoRecycleSpecialRings || !!settings.autoRecycleRarities[item.rarity];
+        if (!canRecycleSpecial) return item;
+      } else {
+        // Check rarity filter
+        const shouldRecycleRarity = !!settings.autoRecycleRarities[item.rarity];
+        if (!shouldRecycleRarity) return item;
+
+        // Check profession filter
+        if (settings.autoRecycleKeepOwnProfession && item.reqProfession === this.character.profession) {
+          return item; // Keep player's own class equipment
+        }
       }
 
       // Perform recycling
@@ -1081,7 +1191,8 @@ export class GameEngine {
     score += (pDef + mDef) * 10;
     
     if (item.critChance) score += item.critChance * 1000;
-    if ((item as any).luck) score += (item as any).luck * 50;
+    const luckVal = item.luckLevel || (item as any).luck || 0;
+    score += luckVal * 50;
     if ((item as any).moveSpeedBonus) score += (item as any).moveSpeedBonus * 500;
     
     score += (item.refineLevel || 0) * 20;
@@ -1095,7 +1206,7 @@ export class GameEngine {
     this.notify();
   };
 
-  public getCandidateSlotsForItem(item: Item): import('../types/game').EquipmentSlot[] {
+  public getCandidateSlotsForItem(item: Item): EquipmentSlot[] {
     if (item.type === 'bracelet') {
       return ['braceletLeft', 'braceletRight'];
     }
@@ -1108,7 +1219,7 @@ export class GameEngine {
     return [];
   }
 
-  public getBestTargetSlotForItem(item: Item): { targetSlot: import('../types/game').EquipmentSlot | null; isBetter: boolean } {
+  public getBestTargetSlotForItem(item: Item): { targetSlot: EquipmentSlot | null; isBetter: boolean } {
     if (item.reqLevel && this.character.level < item.reqLevel) {
       return { targetSlot: null, isBetter: false };
     }
@@ -1128,25 +1239,100 @@ export class GameEngine {
       }
     }
 
-    // 2. Second priority: all candidate slots are filled, find the one with lowest score
-    const newItemScore = this.calculateItemScore(item);
+    // 2. Second priority: all candidate slots are filled, find the slot where equipping item yields the biggest upgrade
     let minScore = Infinity;
     let minSlot = candidateSlots[0];
+    let bestNewScore = 0;
 
     for (const slot of candidateSlots) {
       const equipped = this.character.equipment[slot];
       const score = equipped ? this.calculateItemScore(equipped) : 0;
+
+      // Calculate potential score of item if equipped in this slot with inheritance
+      const potentialRefine = Math.max(item.refineLevel || 0, equipped?.refineLevel || 0);
+      const potentialLuck = Math.max(item.luckLevel || 0, equipped?.luckLevel || 0);
+      const potentialItem = { ...item, refineLevel: potentialRefine, luckLevel: potentialLuck };
+      const potentialScore = this.calculateItemScore(potentialItem);
+
       if (score < minScore) {
         minScore = score;
         minSlot = slot;
+        bestNewScore = potentialScore;
       }
     }
 
-    if (newItemScore > minScore) {
+    if (bestNewScore > minScore) {
       return { targetSlot: minSlot, isBetter: true };
     }
 
     return { targetSlot: candidateSlots[0], isBetter: false };
+  }
+
+  public equipItem(item: Item, inventoryIndex?: number, slotOverride?: EquipmentSlot): boolean {
+    if (!item) return false;
+
+    const { targetSlot } = this.getBestTargetSlotForItem(item);
+    const equipSlot = slotOverride || targetSlot || item.slot;
+    if (!equipSlot) return false;
+
+    const currentEquip = this.character.equipment[equipSlot];
+
+    // 装备与武器属性无损传承逻辑 (Weapon & Equipment Lossless Inheritance)
+    let inheritanceMsg = '';
+    if (currentEquip) {
+      const oldRefine = currentEquip.refineLevel || 0;
+      const oldLuck = currentEquip.luckLevel || 0;
+      const newRefine = item.refineLevel || 0;
+      const newLuck = item.luckLevel || 0;
+
+      const targetRefine = Math.max(oldRefine, newRefine);
+      const targetLuck = Math.max(oldLuck, newLuck);
+      const legacyRefine = Math.min(oldRefine, newRefine);
+      const legacyLuck = Math.min(oldLuck, newLuck);
+
+      const refineInherited = targetRefine > newRefine;
+      const luckInherited = targetLuck > newLuck;
+
+      item.refineLevel = targetRefine;
+      item.luckLevel = targetLuck;
+
+      currentEquip.refineLevel = legacyRefine;
+      currentEquip.luckLevel = legacyLuck;
+
+      if (refineInherited || luckInherited) {
+        const parts = [];
+        if (refineInherited) parts.push(`强化+${targetRefine}`);
+        if (luckInherited) parts.push(`幸运+${targetLuck}`);
+        inheritanceMsg = `⚡【无损传承】成功继承原装备 ${parts.join(' ')}！`;
+      }
+    }
+
+    // Equip item
+    this.character.equipment[equipSlot] = item;
+
+    // Swap currentEquip into inventory
+    if (inventoryIndex !== undefined && inventoryIndex >= 0) {
+      this.character.inventory[inventoryIndex] = currentEquip;
+    } else if (currentEquip) {
+      this.addItemToInventory(currentEquip);
+    }
+
+    if (this.quickEquipPrompt?.id === item.id) {
+      this.clearQuickEquipPrompt();
+    }
+
+    this.recalculateStats();
+
+    if (inheritanceMsg) {
+      this.addParticle(this.character.x, this.character.y, 'text_gold', inheritanceMsg);
+      soundFX.playLevelUp();
+    } else {
+      this.addParticle(this.character.x, this.character.y, 'text_gold', `穿戴 [${item.name}]`);
+      soundFX.playGold();
+    }
+
+    this.notify();
+    return true;
   }
 
   public checkQuickEquip(item: Item) {
@@ -1739,6 +1925,20 @@ export class GameEngine {
 
   // Engine Update Loop (Run every ~50ms)
   public update(now: number) {
+    // Failsafe: If character is somehow stuck in an obstacle or out of bounds (e.g. from a bad click teleport), nudge them out
+    if (this.isTileBlocked(this.character.x, this.character.y)) {
+      const map = MAP_DATABASE[this.currentMapId];
+      if (map) {
+         this.character.x = Math.max(2, Math.min(map.width - 3, this.character.x));
+         this.character.y = Math.max(2, Math.min(map.height - 3, this.character.y));
+         // If still blocked, just send to center
+         if (this.isTileBlocked(this.character.x, this.character.y)) {
+            this.character.x = Math.floor(map.width / 2);
+            this.character.y = Math.floor(map.height / 2);
+         }
+      }
+    }
+
     // Check Combo Decay
     if (this.comboCount > 0 && now - this.lastHitTime > this.comboTimeoutMs) {
       this.comboCount = 0;
@@ -1777,6 +1977,31 @@ export class GameEngine {
       if (m.hp <= 0) return;
       if (m.stunUntil && now < m.stunUntil) return; // Stunned monster cannot act
 
+      // Boss Enrage Logic
+      if (m.isBoss && (m.hp / m.maxHp) < 0.5 && !m.isEnraged) {
+        m.isEnraged = true;
+        m.atkCooldownMs = Math.max(500, m.atkCooldownMs * 0.7); // attack 30% faster
+        m.speed = m.speed * 1.5; // move 50% faster
+        m.physAtk = Math.floor(m.physAtk * 1.5); // 50% more damage
+        
+        this.addParticle(m.x, m.y, 'text_info', '【狂暴】进入暴走状态！');
+        
+        // Huge enrage burst VFX
+        for (let i = 0; i < 8; i++) {
+          this.addVfxParticle({
+            x: m.x + (Math.random() - 0.5) * 2,
+            y: m.y + (Math.random() - 0.5) * 2,
+            vfxKind: 'fire_sword',
+            color: '#dc2626'
+          });
+        }
+      }
+
+      // Intermittent Enrage VFX
+      if (m.isEnraged && Math.random() < 0.03) {
+        this.addParticle(m.x + (Math.random() - 0.5), m.y - 1 + (Math.random() - 0.5), 'damage_red', '💢');
+      }
+
       // Determine Aggro Target
       const aggroPlayer = m.aggroPlayer || 0;
       const aggroPet = m.aggroPet || 0;
@@ -1808,22 +2033,37 @@ export class GameEngine {
 
       if (activeDist <= m.attackRange) {
         // Attack Target
-        if (now - m.lastAtkTime >= m.atkCooldownMs) {
-          m.lastAtkTime = now;
-          soundFX.playMonsterAttack(this.getMonsterTypeId(m));
-          
-          if (targetIsPet) {
-            const dmg = Math.max(5, m.physAtk - this.character.pet!.def);
-            this.character.pet!.hp = Math.max(0, this.character.pet!.hp - dmg);
-            this.addParticle(this.character.pet!.x, this.character.pet!.y, 'damage_red', `-${dmg}`);
-            if (this.character.pet!.hp <= 0) {
-              this.addParticle(this.character.pet!.x, this.character.pet!.y, 'text_info', '神兽阵亡');
+        if (m.isAttacking) {
+          const windupTime = m.isBoss ? 600 : 400; // Longer windup for bosses
+          if (now - (m.attackStartTime || 0) >= windupTime) {
+            m.isAttacking = false;
+            m.lastAtkTime = now;
+            soundFX.playMonsterAttack(this.getMonsterTypeId(m));
+            
+            if (targetIsPet) {
+              const dmg = Math.max(5, m.physAtk - this.character.pet!.def);
+              this.character.pet!.hp = Math.max(0, this.character.pet!.hp - dmg);
+              this.addParticle(this.character.pet!.x, this.character.pet!.y, 'damage_red', `-${dmg}`);
+              if (this.character.pet!.hp <= 0) {
+                this.addParticle(this.character.pet!.x, this.character.pet!.y, 'text_info', '神兽阵亡');
+              }
+            } else {
+              this.monsterAttackPlayer(m, now);
             }
-          } else {
-            this.monsterAttackPlayer(m, now);
+          }
+        } else if (now - m.lastAtkTime >= m.atkCooldownMs) {
+          // Start attack wind-up
+          m.isAttacking = true;
+          m.attackStartTime = now;
+          if (m.isBoss) {
+            // Add a visual tell for boss attacks
+            this.addParticle(m.x, m.y, 'text_info', '❗');
           }
         }
       } else if (activeDist <= aggroRange && !map.isSafeZone) {
+        // Cancel attack if target moved out of range
+        m.isAttacking = false;
+        
         // AI Logic: Move towards or kite
         let moveDir = 1; // 1 = towards, -1 = away
 
@@ -1891,24 +2131,20 @@ export class GameEngine {
     m.aggroPlayer = (m.aggroPlayer || 0) + 100;
     let rawDmg = Math.max(2, m.physAtk - this.stats.physDef);
 
-    // Check 护体神盾 Aegis Shield Mitigation
-    if (now < this.aegisShieldUntil) {
-      rawDmg = Math.max(1, Math.floor(rawDmg * 0.75));
-      if (Math.random() < 0.40) {
-        rawDmg = Math.max(1, Math.floor(rawDmg * 0.5));
-        this.addParticle(this.character.x, this.character.y, 'damage_block', `🛡️【神盾格挡】 -${rawDmg}`);
-      }
-    }
-
-    // Trigger Monster Hit VFX on Player
+    // Trigger Monster / Boss Skill Attacks
     if (m.isBoss) {
-      this.addVfxParticle({
-        x: this.character.x,
-        y: this.character.y,
-        vfxKind: 'boss_smash',
-        durationMs: 750,
-        radius: 2.8
-      });
+      if (!m.lastBossSkillTime || now - m.lastBossSkillTime >= 3500) {
+        m.lastBossSkillTime = now;
+        rawDmg = this.executeBossUniqueSkill(m, rawDmg, now);
+      } else {
+        this.addVfxParticle({
+          x: this.character.x,
+          y: this.character.y,
+          vfxKind: 'boss_smash',
+          durationMs: 750,
+          radius: 2.8
+        });
+      }
     } else {
       this.addVfxParticle({
         x: this.character.x,
@@ -1917,6 +2153,15 @@ export class GameEngine {
         durationMs: 450,
         angle: Math.atan2(this.character.y - m.y, this.character.x - m.x)
       });
+    }
+
+    // Check 护体神盾 Aegis Shield Mitigation
+    if (now < this.aegisShieldUntil) {
+      rawDmg = Math.max(1, Math.floor(rawDmg * 0.75));
+      if (Math.random() < 0.40) {
+        rawDmg = Math.max(1, Math.floor(rawDmg * 0.5));
+        this.addParticle(this.character.x, this.character.y, 'damage_block', `🛡️【神盾格挡】 -${rawDmg}`);
+      }
     }
 
     // Check Special Ring - 护身戒指 Bodyguard Ring (takes MP first)
@@ -1936,7 +2181,7 @@ export class GameEngine {
     }
 
     this.stats.hp = Math.max(0, this.stats.hp - rawDmg);
-    this.addParticle(this.character.x, this.character.y, 'damage_red', `-${rawDmg}`);
+    this.addParticle(this.character.x, this.character.y, 'damage_player_hurt', `💔 -${rawDmg}`);
     soundFX.playPlayerHurt(this.character.profession, this.character.gender === 'female');
 
     // Check Player Death & 复活戒指 Resurrection Ring
@@ -1955,6 +2200,223 @@ export class GameEngine {
         this.addParticle(60, 60, 'text_info', '角色复活，返回比奇城安全区！');
       }
     }
+  }
+
+  private knockbackPlayer(fromX: number, fromY: number, dist: number = 2) {
+    let dx = Math.sign(this.character.x - fromX);
+    let dy = Math.sign(this.character.y - fromY);
+    if (dx === 0 && dy === 0) { dx = (Math.random() > 0.5 ? 1 : -1); }
+    const currentMapConfig = MAP_DATABASE[this.currentMapId];
+    const mapW = currentMapConfig?.width || 30;
+    const mapH = currentMapConfig?.height || 30;
+    const targetX = Math.max(2, Math.min(mapW - 2, Math.round(this.character.x + dx * dist)));
+    const targetY = Math.max(2, Math.min(mapH - 2, Math.round(this.character.y + dy * dist)));
+    if (!this.isTileBlocked(targetX, targetY)) {
+      this.character.x = targetX;
+      this.character.y = targetY;
+    }
+  }
+
+  private executeBossUniqueSkill(m: Monster, baseDmg: number, now: number): number {
+    const templateId = m.templateId || '';
+    const name = m.name;
+    const hpRatio = m.hp / Math.max(1, m.maxHp);
+    const isEnragedPhase = hpRatio <= 0.5;
+    const currentMapConfig = MAP_DATABASE[this.currentMapId];
+    const mapW = currentMapConfig?.width || 30;
+    const mapH = currentMapConfig?.height || 30;
+
+    if (templateId === 'white_boar' || name.includes('白野猪')) {
+      if (isEnragedPhase) {
+        this.addParticle(m.x, m.y, 'text_crit', '【白野猪】 💢 狂暴二阶段: 震地重踏击退！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'boss_smash', durationMs: 950, radius: 4.5 });
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_fire', durationMs: 800, radius: 3.5 });
+        this.knockbackPlayer(m.x, m.y, 2);
+        soundFX.playHit();
+        return Math.floor(baseDmg * 1.8);
+      } else {
+        this.addParticle(m.x, m.y, 'text_crit', '【白野猪】 🐗 狂暴重碾践踏！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'savage_charge', durationMs: 800, radius: 2.5 });
+        soundFX.playHit();
+        return Math.floor(baseDmg * 1.4);
+      }
+    } 
+    else if (templateId === 'woma_leader' || name.includes('沃玛')) {
+      if (isEnragedPhase) {
+        this.addParticle(m.x, m.y, 'text_crit', '【沃玛教主】 ⚡ 狂暴二阶段: 万雷天牢 & 召集卫队！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_thunder', durationMs: 1100, radius: 5.5 });
+        this.addVfxParticle({ x: m.x, y: m.y, vfxKind: 'elemental_thunder', durationMs: 800, radius: 4.0 });
+        this.knockbackPlayer(m.x, m.y, 2);
+        soundFX.playThunder();
+        if (this.monsters.length < 18) {
+          for (let i = 0; i < 2; i++) {
+            this.monsters.push({
+              templateId: 'hook_cat',
+              id: `woma_minion_${now}_${i}_${Math.random()}`,
+              name: '沃玛教主狂暴卫士',
+              level: 35,
+              maxHp: 1500,
+              hp: 1500,
+              physAtk: 90,
+              physDef: 30,
+              magDef: 30,
+              expReward: 600,
+              goldReward: 1000,
+              isBoss: false,
+              color: '#a855f7',
+              speed: 1.5,
+              attackRange: 1,
+              x: Math.max(2, Math.min(mapW - 2, m.x + (i === 0 ? 1 : -1))),
+              y: Math.max(2, Math.min(mapH - 2, m.y + (i === 0 ? -1 : 1))),
+              targetX: m.x,
+              targetY: m.y,
+              lastAtkTime: 0,
+              atkCooldownMs: 1200,
+              drops: [],
+              iconSymbol: '😈'
+            });
+          }
+        }
+        return Math.floor(baseDmg * 2.2);
+      } else {
+        this.addParticle(m.x, m.y, 'text_crit', '【沃玛教主】 ⚡ 沃玛紫电狂轰！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_thunder', durationMs: 900, radius: 3.2 });
+        soundFX.playThunder();
+        return Math.floor(baseDmg * 1.5);
+      }
+    }
+    else if (templateId === 'zuma_leader' || name.includes('祖玛')) {
+      if (isEnragedPhase) {
+        this.addParticle(m.x, m.y, 'text_crit', '【祖玛教主】 🔥 狂暴二阶段: 地火天崩熔岩狂暴！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_fire', durationMs: 1100, radius: 5.5 });
+        this.addVfxParticle({ x: m.x, y: m.y, vfxKind: 'elemental_fire', durationMs: 1100, radius: 4.5 });
+        this.knockbackPlayer(m.x, m.y, 2);
+        soundFX.playFire();
+        m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.03));
+        this.addParticle(m.x, m.y, 'heal_green', '【熔岩天甲】 🛡️ 恢复 3% 气血！');
+        return Math.floor(baseDmg * 2.3);
+      } else {
+        this.addParticle(m.x, m.y, 'text_crit', '【祖玛教主】 🗿 祖玛熔岩天崩裂地！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_fire', durationMs: 1000, radius: 3.5 });
+        soundFX.playFire();
+        m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.02));
+        this.addParticle(m.x, m.y, 'heal_green', '【熔岩护甲】 🛡️ 恢复 2% 气血！');
+        return Math.floor(baseDmg * 1.6);
+      }
+    }
+    else if (templateId === 'red_moon_demon' || name.includes('赤月')) {
+      if (isEnragedPhase) {
+        this.addParticle(m.x, m.y, 'text_crit', '【赤月恶魔】 🩸 狂暴二阶段: 赤月血海狂怒击退！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'sky_slash', durationMs: 1200, radius: 6.5 });
+        this.addVfxParticle({ x: m.x, y: m.y, vfxKind: 'sky_slash', durationMs: 800, radius: 4.5 });
+        this.knockbackPlayer(m.x, m.y, 2);
+        soundFX.playRareDrop();
+        const finalDmg = Math.floor(baseDmg * 2.5);
+        const leech = Math.floor(finalDmg * 0.35);
+        m.hp = Math.min(m.maxHp, m.hp + leech);
+        this.addParticle(m.x, m.y, 'heal_green', `🩸 赤月狂怒汲血 +${leech} HP`);
+        return finalDmg;
+      } else {
+        this.addParticle(m.x, m.y, 'text_crit', '【赤月恶魔】 👁️ 赤月万刺 & 嗜血！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'sky_slash', durationMs: 1100, radius: 4.0 });
+        soundFX.playRareDrop();
+        const finalDmg = Math.floor(baseDmg * 1.7);
+        const leech = Math.floor(finalDmg * 0.2);
+        m.hp = Math.min(m.maxHp, m.hp + leech);
+        this.addParticle(m.x, m.y, 'heal_green', `🩸 赤月汲血 +${leech} HP`);
+        return finalDmg;
+      }
+    }
+    else if (templateId === 'devil_lord' || name.includes('恶魔领主')) {
+      if (isEnragedPhase) {
+        this.addParticle(m.x, m.y, 'text_crit', '【恶魔领主】 🔥 狂暴二阶段: 地狱焚天毁灭震击！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'sun_chaser', durationMs: 1200, radius: 5.5 });
+        this.addVfxParticle({ x: m.x, y: m.y, vfxKind: 'elemental_fire', durationMs: 900, radius: 4.0 });
+        this.knockbackPlayer(m.x, m.y, 2);
+        soundFX.playHit();
+        return Math.floor(baseDmg * 2.6);
+      } else {
+        this.addParticle(m.x, m.y, 'text_crit', '【恶魔领主】 👿 灭世魔斩 & 地狱焚天！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'sun_chaser', durationMs: 1000, radius: 3.6 });
+        soundFX.playHit();
+        return Math.floor(baseDmg * 1.8);
+      }
+    }
+    else if (templateId === 'dragon_god' || name.includes('龙神')) {
+      if (isEnragedPhase) {
+        this.addParticle(m.x, m.y, 'text_crit', '【极光龙神】 ❄️🔥 狂暴二阶段: 龙威咆哮震退 & 冰火暴轰！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_fire', durationMs: 1300, radius: 6.5 });
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_thunder', durationMs: 1300, radius: 5.5 });
+        this.knockbackPlayer(m.x, m.y, 3);
+        soundFX.playThunder();
+        return Math.floor(baseDmg * 2.8);
+      } else {
+        this.addParticle(m.x, m.y, 'text_crit', '【极光龙神】 🐉 极光灭世龙息震天！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_fire', durationMs: 1200, radius: 4.5 });
+        soundFX.playThunder();
+        return Math.floor(baseDmg * 2.0);
+      }
+    }
+    else if (templateId === 'abyss_lord' || name.includes('深渊魔神')) {
+      if (isEnragedPhase) {
+        this.addParticle(m.x, m.y, 'text_crit', '【深渊魔神】 🌀 狂暴二阶段: 时空撕裂虚空冲击！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_thunder', durationMs: 1400, radius: 7.0 });
+        this.addVfxParticle({ x: m.x, y: m.y, vfxKind: 'boss_smash', durationMs: 1000, radius: 5.0 });
+        this.knockbackPlayer(m.x, m.y, 3);
+        soundFX.playHit();
+        return Math.floor(baseDmg * 3.0);
+      } else {
+        this.addParticle(m.x, m.y, 'text_crit', '【深渊魔神】 👁️‍🗨️ 深渊毁灭黑洞！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_thunder', durationMs: 1200, radius: 5.0 });
+        soundFX.playHit();
+        return Math.floor(baseDmg * 2.2);
+      }
+    }
+    else if (templateId === 'abyss_knight' || name.includes('骑士')) {
+      if (isEnragedPhase) {
+        this.addParticle(m.x, m.y, 'text_crit', '【深渊骑士】 💥 狂暴二阶段: 噬魂重踏狂暴击退！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'savage_charge', durationMs: 1000, radius: 5.8 });
+        this.addVfxParticle({ x: m.x, y: m.y, vfxKind: 'boss_smash', durationMs: 800, radius: 4.0 });
+        this.knockbackPlayer(m.x, m.y, 2);
+        soundFX.playHit();
+        return Math.floor(baseDmg * 2.4);
+      } else {
+        this.addParticle(m.x, m.y, 'text_crit', '【深渊骑士】 🏇 魇马踏碎 & 噬魂冲锋！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'savage_charge', durationMs: 900, radius: 3.0 });
+        soundFX.playHit();
+        return Math.floor(baseDmg * 1.8);
+      }
+    }
+    else if (templateId === 'ancient_magic_dragon' || name.includes('魔龙')) {
+      if (isEnragedPhase) {
+        this.addParticle(m.x, m.y, 'text_crit', '【远古魔龙】 ⚡🔥 狂暴二阶段: 神魔天劫全屏击退！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_fire', durationMs: 1500, radius: 8.0 });
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'sky_slash', durationMs: 1000, radius: 6.0 });
+        this.knockbackPlayer(m.x, m.y, 3);
+        soundFX.playHit();
+        return Math.floor(baseDmg * 3.5);
+      } else {
+        this.addParticle(m.x, m.y, 'text_crit', '【远古魔龙】 🐉 远古毁天灭地龙炎暴轰！');
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'elemental_fire', durationMs: 1300, radius: 5.0 });
+        soundFX.playHit();
+        return Math.floor(baseDmg * 2.5);
+      }
+    }
+    else {
+      if (isEnragedPhase) {
+        this.addParticle(m.x, m.y, 'text_crit', `【${m.name}】 💢 狂暴姿态: 震退重压！`);
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'boss_smash', durationMs: 1000, radius: 5.0 });
+        this.knockbackPlayer(m.x, m.y, 2);
+        soundFX.playHit();
+        return Math.floor(baseDmg * 2.0);
+      } else {
+        this.addParticle(m.x, m.y, 'text_crit', `【${m.name}】 💥 霸主暴强轰击！`);
+        this.addVfxParticle({ x: this.character.x, y: this.character.y, vfxKind: 'boss_smash', durationMs: 900, radius: 3.2 });
+        soundFX.playHit();
+        return Math.floor(baseDmg * 1.5);
+      }
+    }
+    return baseDmg;
   }
 
   public castSkill(skillId: string, targetMonsterId?: string) {
@@ -2226,7 +2688,43 @@ export class GameEngine {
     this.targetMonsterId = targetM.id;
     const skillAngle = Math.atan2(targetM.y - this.character.y, targetM.x - this.character.x);
 
-    // Trigger Visual FX for specific skill types
+    // Trigger Visual FX for specific skill types & elemental effects
+    let elemType: 'fire' | 'ice' | 'lightning' | 'poison' | 'holy' | undefined;
+    if (skill.particleType === 'fire_sword' || skill.particleType === 'firewall' || skill.name.includes('火') || skill.name.includes('开天') || skill.name.includes('逐日')) {
+      elemType = 'fire';
+    } else if (skill.particleType === 'ice_storm' || skill.name.includes('冰') || skill.name.includes('雪')) {
+      elemType = 'ice';
+    } else if (skill.particleType === 'thunderbolt' || skill.name.includes('雷') || skill.name.includes('电')) {
+      elemType = 'lightning';
+    } else if (skill.particleType === 'poison' || skill.name.includes('毒')) {
+      elemType = 'poison';
+    } else if (skill.particleType === 'soul_fire' || skill.name.includes('符') || skill.name.includes('治愈')) {
+      elemType = 'holy';
+    }
+
+    if (elemType === 'fire') {
+      this.addVfxParticle({
+        x: targetM.x,
+        y: targetM.y,
+        vfxKind: 'elemental_fire',
+        durationMs: 700
+      });
+    } else if (elemType === 'ice') {
+      this.addVfxParticle({
+        x: targetM.x,
+        y: targetM.y,
+        vfxKind: 'elemental_ice',
+        durationMs: 800
+      });
+    } else if (elemType === 'lightning') {
+      this.addVfxParticle({
+        x: targetM.x,
+        y: targetM.y,
+        vfxKind: 'elemental_thunder',
+        durationMs: 650
+      });
+    }
+
     if (skill.particleType === 'fire_sword') {
       this.addVfxParticle({
         x: targetM.x,
@@ -2821,7 +3319,7 @@ export class GameEngine {
     const settings = this.character.autoBattleSettings;
 
     const now = Date.now();
-    const equipmentTypes = ['weapon', 'armor', 'helmet', 'necklace', 'ring', 'bracelet', 'belt', 'boots'];
+    const equipmentTypes = ['weapon', 'armor', 'helmet', 'necklace', 'ring', 'bracelet', 'belt', 'boots', 'special_ring'];
 
     this.drops = this.drops.filter(drop => {
       // 1. 掉落物满1分钟（60000ms）未拾取则自动消失
@@ -2914,12 +3412,16 @@ export class GameEngine {
     this.particles = this.particles.filter(p => now - p.startTime < p.durationMs);
   }
 
-  public addParticle(x: number, y: number, type: string, text: string, profession?: 'warrior' | 'mage' | 'taoist') {
-    let combatCategory: 'normal' | 'crit' | 'block' | 'heal' | 'info' = 'info';
+  public addParticle(x: number, y: number, type: string, text: string, profession?: 'warrior' | 'mage' | 'taoist', elementalType?: 'fire' | 'ice' | 'lightning' | 'poison' | 'holy') {
+    let combatCategory: 'normal' | 'crit' | 'block' | 'heal' | 'info' | 'player_hurt' = 'info';
     let color = '#38bdf8';
     let durationMs = 1200;
 
-    if (type === 'damage_crit' || type === 'damage_gold' || type.includes('crit')) {
+    if (type === 'damage_player_hurt') {
+      combatCategory = 'player_hurt';
+      color = '#f43f5e'; // Bright Rose / Crimson
+      durationMs = 1300;
+    } else if (type === 'damage_crit' || type === 'damage_gold' || type.includes('crit')) {
       combatCategory = 'crit';
       color = '#fbbf24'; // Gold / Yellow
       durationMs = 1450;
@@ -2929,7 +3431,7 @@ export class GameEngine {
       durationMs = 1250;
     } else if (type === 'damage_normal' || type === 'damage_red' || type === 'damage_yellow' || type.includes('damage')) {
       combatCategory = 'normal';
-      color = '#ef4444'; // Bright Red
+      color = '#f97316'; // Bright Flame Orange / Red
       durationMs = 1150;
     } else if (type.includes('heal') || type.includes('green')) {
       combatCategory = 'heal';
@@ -2970,6 +3472,7 @@ export class GameEngine {
       color,
       text,
       combatCategory,
+      elementalType,
       profession: prof,
       offsetRandomX
     });
@@ -3079,6 +3582,40 @@ export class GameEngine {
       soundFX.playLevelUp();
     }
     this.notify();
+    return true;
+  }
+
+  public useInstantLevelUpPill(): boolean {
+    const startLvl = this.character.level;
+    const expNeeded = this.character.maxExp - this.character.exp;
+    this.character.exp += expNeeded;
+
+    while (this.character.exp >= this.character.maxExp) {
+      this.character.level += 1;
+      this.character.exp -= this.character.maxExp;
+      this.character.maxExp = Math.floor(this.character.maxExp * 1.35);
+      this.trackAchievementProgress('maxLevelReached', this.character.level);
+    }
+
+    this.recalculateStats();
+    this.stats.hp = this.stats.maxHp;
+    this.stats.mp = this.stats.maxMp;
+
+    this.addParticle(this.character.x, this.character.y, 'text_gold', `【直升升级!】突破提升至 LV.${this.character.level}！`);
+    this.addParticle(this.character.x, this.character.y, 'level_up', '⚡ 经验爆发 ⚡');
+    soundFX.playLevelUp();
+    this.notify();
+    return true;
+  }
+
+  public buyAndUseLevelUpPill(): boolean {
+    if (this.character.ingot < 10) {
+      this.addParticle(this.character.x, this.character.y, 'text_info', '元宝不足！需要 10 元宝！');
+      return false;
+    }
+    this.character.ingot -= 10;
+    this.useInstantLevelUpPill();
+    this.addParticle(this.character.x, this.character.y, 'text_gold', '【10元宝直升】消耗10元宝购买并使用了直升经验丹！');
     return true;
   }
 }

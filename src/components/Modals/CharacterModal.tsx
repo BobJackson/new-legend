@@ -31,14 +31,14 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
 
   const slotLabels: Record<EquipmentSlot, { label: string; icon: string }> = {
     weapon: { label: '武器', icon: '🗡️' },
-    armor: { label: '铠甲', icon: '🥋' },
+    armor: { label: '铠甲', icon: '👕' },
     helmet: { label: '头盔', icon: '🪖' },
     necklace: { label: '项链', icon: '📿' },
     ringLeft: { label: '左戒', icon: '💍' },
     ringRight: { label: '右戒', icon: '💍' },
     braceletLeft: { label: '左手', icon: '⌚' },
     braceletRight: { label: '右手', icon: '⌚' },
-    belt: { label: '腰带', icon: '🥋' },
+    belt: { label: '腰带', icon: '🎗️' },
     boots: { label: '战靴', icon: '👢' }
   };
 
@@ -46,14 +46,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
     if (onEquipItem) {
       onEquipItem(item, index);
     } else {
-      const { targetSlot } = engine.getBestTargetSlotForItem(item);
-      const equipSlot = targetSlot || item.slot;
-      if (equipSlot) {
-        const oldEquip = engine.character.equipment[equipSlot];
-        engine.character.equipment[equipSlot] = item;
-        engine.character.inventory[index] = oldEquip;
-        engine.recalculateStats();
-      }
+      engine.equipItem(item, index);
     }
     setHoveredItem(null);
   };

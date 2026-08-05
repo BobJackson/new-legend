@@ -79,7 +79,7 @@ export const CharacterPreviewCanvas: React.FC<CharacterPreviewCanvasProps> = ({
       // Character Center & Breathing Bob
       const prof = character.profession;
       const charBobY = Math.sin(now * 0.0035) * 3;
-      const playerCenterY = cy - 25 + charBobY;
+      const playerCenterY = cy - 35 + charBobY;
       const px = cx;
       const py = cy + 18;
 

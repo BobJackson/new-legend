@@ -3,10 +3,96 @@ import { Volume2, VolumeX } from 'lucide-react';
 import { GameEngine } from '../engine/GameEngine';
 import { MOUNT_TIERS } from '../data/mounts';
 import { MAP_DATABASE } from '../data/maps';
+
+const generateTextures = () => {
+  const textures: Record<string, HTMLCanvasElement> = {};
+  
+  // Grass Texture
+  const grassCanvas = document.createElement('canvas');
+  grassCanvas.width = 128;
+  grassCanvas.height = 128;
+  const gCtx = grassCanvas.getContext('2d');
+  if (gCtx) {
+    gCtx.fillStyle = '#166534'; // Base green
+    gCtx.fillRect(0, 0, 128, 128);
+    for(let i=0; i<300; i++) {
+      gCtx.fillStyle = Math.random() > 0.5 ? '#15803d' : '#14532d';
+      gCtx.fillRect(Math.random()*128, Math.random()*128, 2, 8 + Math.random()*6);
+      gCtx.fillRect(Math.random()*128, Math.random()*128, 6 + Math.random()*4, 2);
+    }
+  }
+  textures.grass = grassCanvas;
+
+  // Dirt/Loess Texture
+  const dirtCanvas = document.createElement('canvas');
+  dirtCanvas.width = 128;
+  dirtCanvas.height = 128;
+  const dCtx = dirtCanvas.getContext('2d');
+  if (dCtx) {
+    dCtx.fillStyle = '#78350f'; // Base brown
+    dCtx.fillRect(0, 0, 128, 128);
+    for(let i=0; i<500; i++) {
+      dCtx.fillStyle = Math.random() > 0.5 ? '#92400e' : '#451a03';
+      dCtx.beginPath();
+      dCtx.arc(Math.random()*128, Math.random()*128, Math.random()*2, 0, Math.PI*2);
+      dCtx.fill();
+    }
+  }
+  textures.dirt = dirtCanvas;
+
+  // Swamp/Snake Valley Texture
+  const swampCanvas = document.createElement('canvas');
+  swampCanvas.width = 128;
+  swampCanvas.height = 128;
+  const sCtx = swampCanvas.getContext('2d');
+  if (sCtx) {
+    sCtx.fillStyle = '#3f6212'; // Base dark olive
+    sCtx.fillRect(0, 0, 128, 128);
+    for(let i=0; i<200; i++) {
+      sCtx.fillStyle = Math.random() > 0.5 ? '#4d7c0f' : '#14532d';
+      sCtx.beginPath();
+      sCtx.ellipse(Math.random()*128, Math.random()*128, 4+Math.random()*6, 2+Math.random()*3, Math.random()*Math.PI, 0, Math.PI*2);
+      sCtx.fill();
+    }
+  }
+  textures.swamp = swampCanvas;
+  
+  // Stone Texture
+  const stoneCanvas = document.createElement('canvas');
+  stoneCanvas.width = 128;
+  stoneCanvas.height = 128;
+  const stCtx = stoneCanvas.getContext('2d');
+  if (stCtx) {
+    stCtx.fillStyle = '#334155'; // Base slate
+    stCtx.fillRect(0, 0, 128, 128);
+    for(let i=0; i<400; i++) {
+      stCtx.fillStyle = Math.random() > 0.5 ? '#475569' : '#1e293b';
+      stCtx.fillRect(Math.random()*128, Math.random()*128, 4+Math.random()*4, 4+Math.random()*4);
+    }
+  }
+  textures.stone = stoneCanvas;
+
+  return textures;
+};
+
+let mapTextures: Record<string, HTMLCanvasElement> | null = null;
+
 import { WEATHER_DATABASE, WeatherType } from '../data/weather';
 import { soundFX } from '../utils/sound';
 import { ComboOverlay } from './HUD/ComboOverlay';
 import { drawCharacterAvatar } from '../utils/characterRenderer';
+import { drawMountBeastOnCanvas } from '../utils/mountRenderer';
+
+// --- TERRAIN BITMAP CACHE ---
+let _terrainCacheCanvas: HTMLCanvasElement | null = null;
+let _terrainCacheCtx: CanvasRenderingContext2D | null = null;
+let _terrainCacheMapId = '';
+let _terrainCacheCamX = -9999;
+let _terrainCacheCamY = -9999;
+let _terrainCacheTime = 0;
+let _terrainCacheTargetW = 0;
+let _terrainCacheTargetH = 0;
+// ----------------------------
 
 interface CanvasRendererProps {
   engine: GameEngine;
@@ -98,6 +184,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
   };
 
   useEffect(() => {
+    if (!mapTextures) {
+      mapTextures = generateTextures();
+    }
+
     let animId: number;
 
     const render = () => {
@@ -109,9 +199,26 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
       const now = Date.now();
       engine.update(now);
 
-      // Resize canvas to match display size cleanly
-      const width = canvas.width = canvas.parentElement?.clientWidth || 800;
-      const height = canvas.height = canvas.parentElement?.clientHeight || 600;
+      // Resize canvas to match display size cleanly with Device Pixel Ratio support for crisp rendering
+      const dpr = window.devicePixelRatio || 1;
+      const cssWidth = canvas.parentElement?.clientWidth || 800;
+      const cssHeight = canvas.parentElement?.clientHeight || 600;
+      const width = cssWidth;
+      const height = cssHeight;
+      
+      const targetW = Math.floor(cssWidth * dpr);
+      const targetH = Math.floor(cssHeight * dpr);
+
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+        canvas.style.width = `${cssWidth}px`;
+        canvas.style.height = `${cssHeight}px`;
+      }
+      
+      // Reset transform and apply DPR scale every frame to ensure crisp rendering
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = false; // Prevents blur on textures and scaling
 
       const map = MAP_DATABASE[engine.currentMapId] || MAP_DATABASE['bichi_city'];
       
@@ -232,8 +339,9 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         } else if (distToPlayer < 0.002) { // Snap directly to avoid micro-vibrations when stationary
           cameraPosRef.current = { x: playerX, y: playerY };
         } else {
-          cameraPosRef.current.x += dx * 0.15;
-          cameraPosRef.current.y += dy * 0.15;
+          const smoothingFactor = engine.isAutoBattling ? 0.06 : 0.15;
+          cameraPosRef.current.x += dx * smoothingFactor;
+          cameraPosRef.current.y += dy * smoothingFactor;
         }
       }
       const camX = cameraPosRef.current.x;
@@ -256,306 +364,518 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         }
       }
 
-      const screenCenterX = width / 2 + shakeX;
-      const screenCenterY = height / 2 + shakeY;
+      const screenCenterX = Math.floor(width / 2) + Math.round(shakeX);
+      const screenCenterY = Math.floor(height / 2) + Math.round(shakeY);
+
 
       // Coordinate converter: grid (x, y) to screen canvas (sx, sy)
+      const getElevation = (x: number, y: number) => {
+        const isOcean = x <= 3 || y <= 3 || x >= map.width - 4 || y >= map.height - 4;
+        const mapHalfX = Math.floor(map.width / 2);
+        const isRiver = !isOcean && (
+          (map.theme === 'green_field' && Math.abs(x - y + Math.sin(x*0.1)*5 - Math.floor(map.width/10)) <= 2) ||
+          (map.theme === 'snake_valley' && Math.abs(x + y + Math.cos(y*0.1)*5 - Math.floor(map.width*0.8)) <= 2)
+        );
+        if (isOcean || isRiver) return 0;
+        const macroNoise = Math.sin(x * 0.12 + y * 0.09) * 0.5 + Math.cos(x * 0.06 - y * 0.14) * 0.5;
+        const microSeed = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+        const microVal = microSeed - Math.floor(microSeed);
+        let elev = Math.pow((macroNoise + 1) / 2, 2.5) * 25; 
+        if (microVal > 0.8) elev += 2; 
+        return Math.round(Math.max(0, elev));
+      };
+
+      // Round camera iso coordinates to prevent sub-pixel smearing/shimmering during camera motion
+      const camIsoX_pixel = Math.round((camX - camY) * (tileWidth / 2));
+      const camIsoY_pixel = Math.round((camX + camY) * (tileHeight / 2));
+
       const toScreen = (gx: number, gy: number) => {
         const isoX = (gx - gy) * (tileWidth / 2);
         const isoY = (gx + gy) * (tileHeight / 2);
-        const camIsoX = (camX - camY) * (tileWidth / 2);
-        const camIsoY = (camX + camY) * (tileHeight / 2);
-
         return {
-          sx: screenCenterX + (isoX - camIsoX),
-          sy: screenCenterY + (isoY - camIsoY)
+          sx: Math.round(screenCenterX + (isoX - camIsoX_pixel)),
+          sy: Math.round(screenCenterY + (isoY - camIsoY_pixel) - getElevation(gx, gy))
+        };
+      };
+      
+      const toScreenFlat = (gx: number, gy: number) => {
+        const isoX = (gx - gy) * (tileWidth / 2);
+        const isoY = (gx + gy) * (tileHeight / 2);
+        return {
+          sx: Math.round(screenCenterX + (isoX - camIsoX_pixel)),
+          sy: Math.round(screenCenterY + (isoY - camIsoY_pixel))
         };
       };
 
-      // 1. Clear background
-      const bgGrad = ctx.createRadialGradient(screenCenterX, screenCenterY, 10, screenCenterX, screenCenterY, width);
-      bgGrad.addColorStop(0, map.bgGradient[0]);
-      bgGrad.addColorStop(1, map.bgGradient[1]);
-      ctx.fillStyle = bgGrad;
-      ctx.fillRect(0, 0, width, height);
+      
+      // --- BITMAP CACHE RENDERING ---
+      const cacheBufferPx = 250; // Extra rendering area around screen
+      const cacheCssW = cssWidth + cacheBufferPx * 2;
+      const cacheCssH = cssHeight + cacheBufferPx * 2;
+      const cacheTargetW = Math.floor(cacheCssW * dpr);
+      const cacheTargetH = Math.floor(cacheCssH * dpr);
+      
+      // Determine base integer camera position for the cache center
+      const cacheBaseCamX = Math.round(camX);
+      const cacheBaseCamY = Math.round(camY);
+      
+      const distToCacheCenter = Math.hypot(camX - _terrainCacheCamX, camY - _terrainCacheCamY);
+      // We rebuild cache if camera moves by more than ~4 tiles, or every 200ms for water animation, or window resizes
+      const needsCacheUpdate = 
+         _terrainCacheMapId !== engine.currentMapId ||
+         _terrainCacheTargetW !== cacheTargetW ||
+         _terrainCacheTargetH !== cacheTargetH ||
+         distToCacheCenter > 4 ||
+         (now - _terrainCacheTime > 200);
 
-      // 1.5 Draw 3D Island Base (Premium 2.5D depth effect)
-      const mapTop = toScreen(0, 0);
-      const mapRight = toScreen(map.width - 1, 0);
-      const mapBottom = toScreen(map.width - 1, map.height - 1);
-      const mapLeft = toScreen(0, map.height - 1);
-      const islandThickness = 120; // 3D depth of the floating map
+      if (needsCacheUpdate) {
+         if (!_terrainCacheCanvas) {
+            _terrainCacheCanvas = document.createElement('canvas');
+            _terrainCacheCtx = _terrainCacheCanvas.getContext('2d', { alpha: false });
+         }
+         _terrainCacheCanvas.width = cacheTargetW;
+         _terrainCacheCanvas.height = cacheTargetH;
+         
+         _terrainCacheMapId = engine.currentMapId;
+         _terrainCacheTargetW = cacheTargetW;
+         _terrainCacheTargetH = cacheTargetH;
+         _terrainCacheCamX = cacheBaseCamX;
+         _terrainCacheCamY = cacheBaseCamY;
+         _terrainCacheTime = now;
+         
+         const cctx = _terrainCacheCtx!;
+         cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+         cctx.imageSmoothingEnabled = false;
+         
+         // Fill deep background
+         cctx.fillStyle = '#0f172a';
+         cctx.fillRect(0, 0, cacheCssW, cacheCssH);
+         
+         const cacheCenterX = cacheCssW / 2;
+         const cacheCenterY = cacheCssH / 2;
+         const cacheCamIsoX = Math.round((cacheBaseCamX - cacheBaseCamY) * (tileWidth / 2));
+         const cacheCamIsoY = Math.round((cacheBaseCamX + cacheBaseCamY) * (tileHeight / 2));
+         
+         const toCacheScreen = (gx: number, gy: number) => {
+            const isoX = (gx - gy) * (tileWidth / 2);
+            const isoY = (gx + gy) * (tileHeight / 2);
+            return {
+               sx: Math.round(cacheCenterX + (isoX - cacheCamIsoX)),
+               sy: Math.round(cacheCenterY + (isoY - cacheCamIsoY) - getElevation(gx, gy))
+            };
+         };
+         
+         const toCacheScreenFlat = (gx: number, gy: number) => {
+            const isoX = (gx - gy) * (tileWidth / 2);
+            const isoY = (gx + gy) * (tileHeight / 2);
+            return {
+               sx: Math.round(cacheCenterX + (isoX - cacheCamIsoX)),
+               sy: Math.round(cacheCenterY + (isoY - cacheCamIsoY))
+            };
+         };
 
-      // Ambient Drop Shadow
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(mapTop.sx, mapTop.sy - tileHeight / 2 + islandThickness + 60);
-      ctx.lineTo(mapRight.sx + tileWidth / 2, mapRight.sy + islandThickness + 60);
-      ctx.lineTo(mapBottom.sx, mapBottom.sy + tileHeight / 2 + islandThickness + 60);
-      ctx.lineTo(mapLeft.sx - tileWidth / 2, mapLeft.sy + islandThickness + 60);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.filter = 'blur(40px)';
-      ctx.fill();
-      ctx.restore();
-
-      // Left 3D Face (Darker bedrock)
-      ctx.beginPath();
-      ctx.moveTo(mapLeft.sx - tileWidth / 2, mapLeft.sy);
-      ctx.lineTo(mapBottom.sx, mapBottom.sy + tileHeight / 2);
-      ctx.lineTo(mapBottom.sx, mapBottom.sy + tileHeight / 2 + islandThickness);
-      ctx.lineTo(mapLeft.sx - tileWidth / 2, mapLeft.sy + islandThickness);
-      ctx.closePath();
-      const leftGrad = ctx.createLinearGradient(0, mapLeft.sy, 0, mapLeft.sy + islandThickness);
-      leftGrad.addColorStop(0, '#1e1b4b'); // Deep indigo top
-      leftGrad.addColorStop(1, '#020617'); // Pitch black bottom
-      ctx.fillStyle = leftGrad;
-      ctx.fill();
-      ctx.strokeStyle = '#312e81';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // Right 3D Face (Lighter bedrock)
-      ctx.beginPath();
-      ctx.moveTo(mapBottom.sx, mapBottom.sy + tileHeight / 2);
-      ctx.lineTo(mapRight.sx + tileWidth / 2, mapRight.sy);
-      ctx.lineTo(mapRight.sx + tileWidth / 2, mapRight.sy + islandThickness);
-      ctx.lineTo(mapBottom.sx, mapBottom.sy + tileHeight / 2 + islandThickness);
-      ctx.closePath();
-      const rightGrad = ctx.createLinearGradient(0, mapRight.sy, 0, mapRight.sy + islandThickness);
-      rightGrad.addColorStop(0, '#312e81');
-      rightGrad.addColorStop(1, '#020617');
-      ctx.fillStyle = rightGrad;
-      ctx.fill();
-      ctx.strokeStyle = '#4338ca';
-      ctx.stroke();
-
-      // 2. Draw Floor Grid (Premium 3D styling)
-      for (let gx = 0; gx < map.width; gx++) {
-        for (let gy = 0; gy < map.height; gy++) {
-          const { sx, sy } = toScreen(gx, gy);
-
-          // Skip tiles way off screen
-          if (sx < -100 || sx > width + 100 || sy < -100 || sy > height + 100) continue;
-
-          // Tile Base
-          ctx.beginPath();
-          ctx.moveTo(sx, sy - tileHeight / 2);
-          ctx.lineTo(sx + tileWidth / 2, sy);
-          ctx.lineTo(sx, sy + tileHeight / 2);
-          ctx.lineTo(sx - tileWidth / 2, sy);
-          ctx.closePath();
-
-          // Dynamic theme-based realistic 2.5D textures
-          const isDark = (gx + gy) % 2 === 0;
-          
-          // Noise/Texture function pseudo-random based on grid coords
-          const noise = Math.sin(gx * 12.9898 + gy * 78.233) * 43758.5453;
-          const randomVal = noise - Math.floor(noise);
-
-          // Environmental archetype flags based on coordinates
-          const isOceanTile = gx <= 3 || gy <= 3 || gx >= map.width - 4 || gy >= map.height - 4;
-          const isRiverTile = !isOceanTile && (
-            (map.theme === 'green_field' && Math.abs(gx - gy - 8) <= 2) ||
-            (map.theme === 'snake_valley' && Math.abs(gx + gy - 120) <= 2)
-          );
-          const isLoessTile = !isOceanTile && !isRiverTile && (
-            (map.theme === 'snake_valley' && (gx > 80 || gy > 80)) ||
-            (map.theme === 'green_field' && gx > 90 && gy < 40)
-          );
-
-          let tileColor = isDark ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.04)';
-          let highlightColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.15)';
-          let shadowColor = 'rgba(0,0,0,0.4)';
-
-          if (isOceanTile) {
-            // 🌊 汪洋大海 (Vast Ocean & Coastal Waves)
-            const wavePhase = (now * 0.002 + gx * 0.5 + gy * 0.5) % (Math.PI * 2);
-            const waveGlow = Math.sin(wavePhase) * 0.15;
-            tileColor = isDark ? `rgba(14, 116, 144, ${0.75 + waveGlow})` : `rgba(6, 182, 212, ${0.65 + waveGlow})`;
-            highlightColor = 'rgba(165, 243, 252, 0.4)';
-            shadowColor = 'rgba(8, 47, 73, 0.8)';
-          } else if (isRiverTile) {
-            // 🏔️ 高山流水 - 碧波江流 (Flowing River Streams)
-            const flowOffset = (now * 0.003 + gx * 0.3) % (Math.PI * 2);
-            const flowGlow = Math.sin(flowOffset) * 0.12;
-            tileColor = isDark ? `rgba(2, 132, 199, ${0.8 + flowGlow})` : `rgba(56, 189, 248, ${0.7 + flowGlow})`;
-            highlightColor = 'rgba(224, 242, 254, 0.5)';
-            shadowColor = 'rgba(12, 74, 110, 0.7)';
-          } else if (isLoessTile) {
-            // 🏜️ 黄土高坡 (Loess Plateau & Desert Clay Soil)
-            tileColor = isDark ? 'rgba(180, 83, 9, 0.75)' : 'rgba(217, 119, 6, 0.65)';
-            highlightColor = 'rgba(254, 240, 138, 0.25)';
-            shadowColor = 'rgba(120, 53, 15, 0.8)';
-            if (randomVal > 0.7) {
-              tileColor = 'rgba(146, 64, 14, 0.8)'; // Clay fissures
-            }
-          } else if (map.theme === 'green_field') {
-            // 🌲 深山老林 / 绿洲原野 (Primitive Grass Turf & Oak Woods)
-            tileColor = isDark ? 'rgba(20, 83, 45, 0.65)' : 'rgba(22, 101, 52, 0.55)';
-            highlightColor = 'rgba(134, 239, 172, 0.2)';
-            if (randomVal > 0.75) {
-              tileColor = 'rgba(34, 197, 94, 0.45)'; // Lush moss patch
-            }
-          } else if (map.theme === 'snake_valley') {
-            tileColor = isDark ? 'rgba(63, 98, 18, 0.7)' : 'rgba(77, 124, 15, 0.6)';
-            highlightColor = 'rgba(190, 242, 100, 0.2)';
-            if (randomVal > 0.7) {
-               tileColor = 'rgba(101, 163, 13, 0.5)';
-            }
-          } else if (map.theme === 'stone_tomb') {
-            tileColor = isDark ? 'rgba(69, 26, 3, 0.75)' : 'rgba(120, 53, 15, 0.65)';
-            highlightColor = 'rgba(251, 146, 60, 0.15)';
-            if (randomVal > 0.85) {
-               tileColor = 'rgba(180, 83, 9, 0.45)';
-            }
-          } else if (map.theme === 'zuma_temple') {
-            tileColor = isDark ? 'rgba(49, 46, 129, 0.75)' : 'rgba(67, 56, 202, 0.65)';
-            highlightColor = 'rgba(165, 180, 252, 0.25)';
-            shadowColor = 'rgba(0,0,0,0.7)';
-            if (randomVal > 0.9) {
-               tileColor = 'rgba(139, 92, 246, 0.35)'; // Purple glowing runes
-            }
-          } else if (map.theme === 'red_moon') {
-            tileColor = isDark ? 'rgba(127, 29, 29, 0.75)' : 'rgba(153, 27, 27, 0.65)';
-            highlightColor = 'rgba(248, 113, 113, 0.25)';
-            if (randomVal > 0.75) {
-               tileColor = 'rgba(185, 28, 28, 0.7)'; // Blood lava
-            }
-          } else if (map.theme === 'sabak_castle') {
-            tileColor = isDark ? 'rgba(113, 63, 18, 0.8)' : 'rgba(161, 98, 7, 0.7)';
-            highlightColor = 'rgba(253, 224, 71, 0.25)';
-            if (randomVal > 0.88) {
-               tileColor = 'rgba(202, 138, 4, 0.6)'; // Gold imperial inlay
-            }
-          }
-
-          ctx.fillStyle = tileColor;
-          ctx.fill();
-
-          // 🌊 Animated Ocean Foam & Waves on Coastline Tiles
-          if (isOceanTile) {
-             const wavePhase = (now * 0.003 + gx * 0.8 + gy * 0.8) % (Math.PI * 2);
-             const foamOffset = Math.sin(wavePhase) * 6;
-             ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-             ctx.lineWidth = 1.8;
-             ctx.beginPath();
-             ctx.arc(sx, sy + foamOffset, 8, Math.PI * 0.2, Math.PI * 0.8);
-             ctx.stroke();
-          }
-
-          // 🏔️ Flowing River Current Foam Lines
-          if (isRiverTile) {
-             const flowPhase = (now * 0.005 + gx * 1.2) % (Math.PI * 2);
-             const foamShift = Math.sin(flowPhase) * 5;
-             ctx.strokeStyle = 'rgba(224, 242, 254, 0.75)';
-             ctx.lineWidth = 1.5;
-             ctx.beginPath();
-             ctx.moveTo(sx - 10 + foamShift, sy - 3);
-             ctx.lineTo(sx + 10 + foamShift, sy + 3);
-             ctx.stroke();
-          }
-
-          // 🏜️ Loess Clay Fissure Crack Lines
-          if (isLoessTile && randomVal > 0.75) {
-             ctx.strokeStyle = 'rgba(69, 26, 3, 0.6)';
-             ctx.lineWidth = 1.2;
-             ctx.beginPath();
-             ctx.moveTo(sx - 6, sy - 4);
-             ctx.lineTo(sx, sy + 2);
-             ctx.lineTo(sx + 8, sy - 2);
-             ctx.stroke();
-          }
-
-          // Detail specs
-          if (randomVal > 0.95 && !isOceanTile && !isRiverTile && map.theme !== 'zuma_temple') {
-             ctx.fillStyle = 'rgba(0,0,0,0.4)';
-             ctx.beginPath();
-             ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
-             ctx.fill();
-          }
-
-          // Inner Bevel Highlight for 3D effect
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = highlightColor;
-          ctx.beginPath();
-          ctx.moveTo(sx - tileWidth / 2 + 2, sy);
-          ctx.lineTo(sx, sy - tileHeight / 2 + 1);
-          ctx.lineTo(sx + tileWidth / 2 - 2, sy);
-          ctx.stroke();
-
-          // Inner Bevel Shadow
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = shadowColor;
-          ctx.beginPath();
-          ctx.moveTo(sx - tileWidth / 2 + 2, sy);
-          ctx.lineTo(sx, sy + tileHeight / 2 - 1);
-          ctx.lineTo(sx + tileWidth / 2 - 2, sy);
-          ctx.stroke();
-
-          // Interactable Environment Decorations
-          if (randomVal > 0.8) {
-             const tileKey = `${gx},${gy}`;
-             const lastInteraction = decoInteractionRef.current[tileKey] || 0;
-             const timeSinceInteraction = now - lastInteraction;
-             
-             let sway = 0;
-             if (timeSinceInteraction < 0.5) {
-                sway = Math.sin(timeSinceInteraction * 20) * (0.5 - timeSinceInteraction) * 10;
-             } else {
-                sway = Math.sin(now * 2 + gx) * 2; // idle wind sway
-             }
-             
-             ctx.save();
-             if (map.theme === 'green_field' || map.theme === 'snake_valley') {
-                // Draw grass
-                ctx.translate(sx, sy);
-                ctx.rotate((sway * Math.PI) / 180);
-                
-                ctx.beginPath();
-                ctx.moveTo(0, 0);
-                ctx.quadraticCurveTo(-5, -10, -3, -18);
-                ctx.moveTo(0, 0);
-                ctx.quadraticCurveTo(5, -12, 3, -20);
-                ctx.moveTo(0, 0);
-                ctx.quadraticCurveTo(0, -10, 0, -22);
-                ctx.strokeStyle = (map.theme === 'green_field') ? 'rgba(34, 197, 94, 0.8)' : 'rgba(101, 163, 13, 0.8)';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-             } else if (map.theme === 'stone_tomb' && randomVal > 0.85) {
-                // Draw broken stele
-                const hit = timeSinceInteraction < 0.5;
-                ctx.translate(sx, sy);
-                if (hit) ctx.rotate((Math.random() - 0.5) * 0.1);
-                
-                ctx.fillStyle = hit ? 'rgba(120, 113, 108, 0.9)' : 'rgba(168, 162, 158, 0.9)';
-                ctx.beginPath();
-                ctx.moveTo(-6, 0);
-                ctx.lineTo(-4, -18);
-                ctx.lineTo(2, -16);
-                ctx.lineTo(4, -5);
-                ctx.lineTo(8, 0);
-                ctx.closePath();
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(68, 64, 60, 0.8)';
-                ctx.lineWidth = 1;
-                ctx.stroke();
-             }
-             ctx.restore();
-          }
-
-          // Inner Bevel Shadow
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-          ctx.beginPath();
-          ctx.moveTo(sx - tileWidth / 2 + 2, sy);
-          ctx.lineTo(sx, sy + tileHeight / 2 - 1);
-          ctx.lineTo(sx + tileWidth / 2 - 2, sy);
-          ctx.stroke();
-        }
+         // Original Terrain Loop adjusted to cache ctx
+         const originalCtx = ctx;
+         const originalToScreen = toScreen;
+         const originalToScreenFlat = toScreenFlat;
+         const originalWidth = width;
+         const originalHeight = height;
+         
+         // Overwrite locally for the inner block
+         const ctx_dummy = cctx;
+         const toScreen_dummy = toCacheScreen;
+         const toScreenFlat_dummy = toCacheScreenFlat;
+         const width_dummy = cacheCssW;
+         const height_dummy = cacheCssH;
+         
+         (function(ctx, toScreen, toScreenFlat, width, height, camX, camY) {
+            // 1.5 Draw 3D Island Base (Premium 2.5D depth effect)
+                  const mapTop = toScreenFlat(0, 0);
+                  const mapRight = toScreenFlat(map.width - 1, 0);
+                  const mapBottom = toScreenFlat(map.width - 1, map.height - 1);
+                  const mapLeft = toScreenFlat(0, map.height - 1);
+                  const islandThickness = 120; // 3D depth of the floating map
+            
+                  // Ambient Drop Shadow
+                  ctx.save();
+                  ctx.beginPath();
+                  ctx.moveTo(mapTop.sx, mapTop.sy - tileHeight / 2 + islandThickness + 60);
+                  ctx.lineTo(mapRight.sx + tileWidth / 2, mapRight.sy + islandThickness + 60);
+                  ctx.lineTo(mapBottom.sx, mapBottom.sy + tileHeight / 2 + islandThickness + 60);
+                  ctx.lineTo(mapLeft.sx - tileWidth / 2, mapLeft.sy + islandThickness + 60);
+                  ctx.closePath();
+                  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                  ctx.filter = 'blur(40px)';
+                  ctx.fill();
+                  ctx.restore();
+            
+                  // Left 3D Face (Darker bedrock)
+                  ctx.beginPath();
+                  ctx.moveTo(mapLeft.sx - tileWidth / 2, mapLeft.sy);
+                  ctx.lineTo(mapBottom.sx, mapBottom.sy + tileHeight / 2);
+                  ctx.lineTo(mapBottom.sx, mapBottom.sy + tileHeight / 2 + islandThickness);
+                  ctx.lineTo(mapLeft.sx - tileWidth / 2, mapLeft.sy + islandThickness);
+                  ctx.closePath();
+                  const leftGrad = ctx.createLinearGradient(0, mapLeft.sy, 0, mapLeft.sy + islandThickness);
+                  leftGrad.addColorStop(0, '#1e1b4b'); // Deep indigo top
+                  leftGrad.addColorStop(1, '#020617'); // Pitch black bottom
+                  ctx.fillStyle = leftGrad;
+                  ctx.fill();
+                  ctx.strokeStyle = '#312e81';
+                  ctx.lineWidth = 1;
+                  ctx.stroke();
+            
+                  // Right 3D Face (Lighter bedrock)
+                  ctx.beginPath();
+                  ctx.moveTo(mapBottom.sx, mapBottom.sy + tileHeight / 2);
+                  ctx.lineTo(mapRight.sx + tileWidth / 2, mapRight.sy);
+                  ctx.lineTo(mapRight.sx + tileWidth / 2, mapRight.sy + islandThickness);
+                  ctx.lineTo(mapBottom.sx, mapBottom.sy + tileHeight / 2 + islandThickness);
+                  ctx.closePath();
+                  const rightGrad = ctx.createLinearGradient(0, mapRight.sy, 0, mapRight.sy + islandThickness);
+                  rightGrad.addColorStop(0, '#312e81');
+                  rightGrad.addColorStop(1, '#020617');
+                  ctx.fillStyle = rightGrad;
+                  ctx.fill();
+                  ctx.strokeStyle = '#4338ca';
+                  ctx.stroke();
+            
+                  // 2. Draw Seamless Organic Terrain (High-Fidelity Fantasy ARPG World Map)
+                  const buffer = 25 + Math.max(Math.ceil(width / tileWidth), Math.ceil(height / tileHeight));
+                  const minGx = Math.floor(camX - buffer);
+                  const maxGx = Math.floor(camX + buffer);
+                  const minGy = Math.floor(camY - buffer);
+                  const maxGy = Math.floor(camY + buffer);
+            
+                  const sumMin = minGx + minGy;
+                  const sumMax = maxGx + maxGy;
+            
+                  for (let sum = sumMin; sum <= sumMax; sum++) {
+                    for (let gx = minGx; gx <= maxGx; gx++) {
+                      const gy = sum - gx;
+                      if (gy < minGy || gy > maxGy) continue;
+                      
+                      const { sx, sy } = toScreen(gx, gy);
+            
+                      // Skip tiles way off screen
+                      if (sx < -120 || sx > width + 120 || sy < -120 || sy > height + 120) continue;
+            
+                      // Seamless Diamond Tile Polygon with Elevation
+                      const pTop = toScreen(gx - 0.5, gy - 0.5);
+                      const pRight = toScreen(gx + 0.5, gy - 0.5);
+                      const pBottom = toScreen(gx + 0.5, gy + 0.5);
+                      const pLeft = toScreen(gx - 0.5, gy + 0.5);
+            
+                      ctx.beginPath();
+                      ctx.moveTo(pTop.sx, pTop.sy);
+                      ctx.lineTo(pRight.sx, pRight.sy);
+                      ctx.lineTo(pBottom.sx, pBottom.sy);
+                      ctx.lineTo(pLeft.sx, pLeft.sy);
+                      ctx.closePath();
+            
+                      // Organic Continuous Spatial Noise (Eliminates Artificial Checkerboard Grids)
+                      const macroNoise = Math.sin(gx * 0.12 + gy * 0.09) * 0.5 + Math.cos(gx * 0.06 - gy * 0.14) * 0.5;
+                      const microSeed = Math.sin(gx * 12.9898 + gy * 78.233) * 43758.5453;
+                      const microVal = microSeed - Math.floor(microSeed);
+            
+                      // Environmental archetype flags based on coordinates
+                      const isOceanTile = gx <= 3 || gy <= 3 || gx >= map.width - 4 || gy >= map.height - 4;
+                      const mapHalfX = Math.floor(map.width / 2);
+                      const mapHalfY = Math.floor(map.height / 2);
+                      // Rivers wind through the map
+                      const isRiverTile = !isOceanTile && (
+                        (map.theme === 'green_field' && Math.abs(gx - gy + Math.sin(gx*0.1)*5 - Math.floor(map.width/10)) <= 2) ||
+                        (map.theme === 'snake_valley' && Math.abs(gx + gy + Math.cos(gy*0.1)*5 - Math.floor(map.width*0.8)) <= 2)
+                      );
+                      const isLoessTile = !isOceanTile && !isRiverTile && (
+                        (map.theme === 'snake_valley' && (gx > mapHalfX || gy > mapHalfY)) ||
+                        (map.theme === 'green_field' && gx > mapHalfX + 20 && gy < mapHalfY - 20)
+                      );
+            
+                      let tileFill = '#1e293b';
+            
+                      if (isOceanTile) {
+                        // 🌊 Seamless Deep Ocean with Animated Surface Waves
+                        const wavePhase = (now * 0.002 + gx * 0.4 + gy * 0.4) % (Math.PI * 2);
+                        const waveGlow = Math.sin(wavePhase) * 0.15;
+                        const oGrad = ctx.createLinearGradient(sx, sy - tileHeight / 2, sx, sy + tileHeight / 2);
+                        oGrad.addColorStop(0, `rgba(14, 116, 144, ${0.9 + waveGlow})`);
+                        oGrad.addColorStop(1, `rgba(8, 47, 73, ${0.95 + waveGlow})`);
+                        tileFill = oGrad as any;
+                      } else if (isRiverTile) {
+                        // 🏔️ Flowing Alpine River Current (流水潺潺)
+                        const flowOffset = (now * 0.003 + gx * 0.3 + gy * 0.1) % (Math.PI * 2);
+                        const flowGlow = Math.sin(flowOffset) * 0.15;
+                        const rGrad = ctx.createLinearGradient(sx - tileWidth / 2, sy, sx + tileWidth / 2, sy);
+                        rGrad.addColorStop(0, `rgba(2, 132, 199, ${0.85 + flowGlow})`);
+                        rGrad.addColorStop(1, `rgba(56, 189, 248, ${0.85 + flowGlow})`);
+                        tileFill = rGrad as any;
+                      } else if (isLoessTile) {
+                        // 🏜️ Loess Plateau & Natural Sand Dunes
+                        const baseHue = 35 + macroNoise * 8;
+                        const baseSat = 70 + microVal * 15;
+                        const baseLight = 32 + macroNoise * 12 + microVal * 4;
+                        tileFill = `hsl(${baseHue}, ${baseSat}%, ${baseLight}%)`;
+                      } else if (map.theme === 'green_field') {
+                        // 🌲 Primeval Forest & Emerald Meadows (Natural Green Blend)
+                        const isDirtPath = Math.abs(gx - gy) <= 1.5 || Math.abs(gx + gy - 60) <= 1.5;
+                        if (isDirtPath) {
+                          // Rich Woodland Dirt Path
+                          tileFill = `hsl(${28 + microVal * 6}, ${45 + macroNoise * 10}%, ${24 + microVal * 6}%)`;
+                        } else {
+                          // Rich Multi-tonal Grass Turf
+                          const gHue = 138 + macroNoise * 18;
+                          const gSat = 45 + microVal * 20;
+                          const gLight = 22 + macroNoise * 10 + microVal * 5;
+                          tileFill = `hsl(${gHue}, ${gSat}%, ${gLight}%)`;
+                        }
+                      } else if (map.theme === 'snake_valley') {
+                        // 🐍 Poisonous Valley (Dark Olive Swamp Grass)
+                        const gHue = 82 + macroNoise * 15;
+                        const gSat = 50 + microVal * 15;
+                        const gLight = 20 + macroNoise * 8 + microVal * 4;
+                        tileFill = `hsl(${gHue}, ${gSat}%, ${gLight}%)`;
+                      } else if (map.theme === 'stone_tomb') {
+                        // 🗿 Ancient Granite Crypt Flagstones
+                        const stoneLight = 18 + macroNoise * 10 + microVal * 6;
+                        tileFill = `hsl(215, 12%, ${stoneLight}%)`;
+                      } else if (map.theme === 'zuma_temple') {
+                        // 🔮 Mystical Zuma Shrine (Indigo Slate with Rune Veins)
+                        const zLight = 16 + macroNoise * 8 + microVal * 5;
+                        tileFill = `hsl(245, 35%, ${zLight}%)`;
+                      } else if (map.theme === 'red_moon') {
+                        // 🩸 Red Moon Obsidian Lava Fields
+                        const rLight = 16 + macroNoise * 10 + microVal * 6;
+                        tileFill = `hsl(0, 60%, ${rLight}%)`;
+                      } else if (map.theme === 'sabak_castle') {
+                        // 🏰 Sabak Castle Imperial Flagstones
+                        const sLight = 24 + macroNoise * 12 + microVal * 5;
+                        tileFill = `hsl(42, 45%, ${sLight}%)`;
+                      }
+            
+                      ctx.fillStyle = tileFill;
+                      ctx.fill();
+                      
+                      if (isRiverTile || isOceanTile) {
+                        ctx.save();
+                        ctx.clip(); // clip ripples to this tile
+                        const time = now * 0.002;
+                        const sparkle = Math.sin(time * 2 + gx*3 + gy*7);
+                        if (sparkle > 0.8) {
+                          ctx.beginPath();
+                          ctx.arc(sx + Math.sin(time+gx)*10, sy + Math.cos(time+gy)*5, 1.5, 0, Math.PI*2);
+                          ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                          ctx.shadowColor = '#fff';
+                          ctx.shadowBlur = 4;
+                          ctx.fill();
+                        }
+                        // Flow lines
+                        const offset = (time * 5 + gx * 10) % 20;
+                        ctx.beginPath();
+                        ctx.moveTo(sx - 10 + offset, sy);
+                        ctx.quadraticCurveTo(sx + offset, sy - 5, sx + 10 + offset, sy);
+                        ctx.strokeStyle = `rgba(255, 255, 255, ${isRiverTile ? 0.3 : 0.1})`;
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        ctx.restore();
+                      }
+            
+                      // Seamless Border Blend (No Harsh Checkerboards or Grid Bevels)
+                      // Soft ambient edge lighting for subtle terrain depth
+                      ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+                      ctx.lineWidth = 0.5;
+                      ctx.stroke();
+            
+                      // 🌊 Animated Ocean Foam & Shoreline Caustics
+                      if (isOceanTile) {
+                        const wavePhase = (now * 0.003 + gx * 0.8 + gy * 0.8) % (Math.PI * 2);
+                        const foamOffset = Math.sin(wavePhase) * 6;
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                        ctx.lineWidth = 1.2;
+                        ctx.beginPath();
+                        ctx.arc(sx, sy + foamOffset, 10, Math.PI * 0.2, Math.PI * 0.8);
+                        ctx.stroke();
+                      }
+            
+                      // 🏔️ Flowing River Foam Streaks
+                      if (isRiverTile) {
+                        const flowPhase = (now * 0.005 + gx * 1.2) % (Math.PI * 2);
+                        const foamShift = Math.sin(flowPhase) * 6;
+                        ctx.strokeStyle = 'rgba(224, 242, 254, 0.65)';
+                        ctx.lineWidth = 1.2;
+                        ctx.beginPath();
+                        ctx.moveTo(sx - 12 + foamShift, sy - 3);
+                        ctx.lineTo(sx + 12 + foamShift, sy + 3);
+                        ctx.stroke();
+                      }
+            
+                      // 🏜️ Loess Wind-blown Sand Ripples
+                      if (isLoessTile && microVal > 0.65) {
+                        ctx.strokeStyle = 'rgba(120, 53, 15, 0.35)';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(sx - 8, sy - 2);
+                        ctx.quadraticCurveTo(sx, sy + 4, sx + 8, sy - 2);
+                        ctx.stroke();
+                      }
+            
+                      // 🌿 Organic Terrain Micro-Details (Wild Grass, Moss, Wildflowers, Pebbles)
+                      if (microVal > 0.68 && !isOceanTile && !isRiverTile) {
+                        const tileKey = `${gx},${gy}`;
+                        const lastInteraction = decoInteractionRef.current[tileKey] || 0;
+                        const timeSinceInteraction = now - lastInteraction;
+                        const sway = timeSinceInteraction < 0.5
+                          ? Math.sin(timeSinceInteraction * 20) * (0.5 - timeSinceInteraction) * 12
+                          : Math.sin(now * 2.5 + gx) * 2;
+            
+                        ctx.save();
+                        ctx.translate(sx, sy);
+            
+                        if (map.theme === 'green_field' || map.theme === 'snake_valley') {
+                          ctx.rotate((sway * Math.PI) / 180);
+            
+                          // Multi-blade Tuft of Grass
+                          ctx.beginPath();
+                          ctx.moveTo(-2, 0); ctx.quadraticCurveTo(-7, -10, -5, -18);
+                          ctx.moveTo(0, 0); ctx.quadraticCurveTo(0, -12, 1, -22);
+                          ctx.moveTo(2, 0); ctx.quadraticCurveTo(7, -10, 6, -16);
+                          ctx.strokeStyle = map.theme === 'green_field' ? 'rgba(74, 222, 128, 0.85)' : 'rgba(163, 230, 53, 0.85)';
+                          ctx.lineWidth = 1.6;
+                          ctx.stroke();
+            
+                          // Wild Flower / Clover Blossom
+                          if (microVal > 0.92) {
+                            ctx.fillStyle = microVal > 0.96 ? '#fef08a' : '#f472b6';
+                            ctx.beginPath();
+                            ctx.arc(2, -18, 2, 0, Math.PI * 2);
+                            ctx.fill();
+                          }
+                        } else if (map.theme === 'stone_tomb' || map.theme === 'zuma_temple') {
+                          // Ancient Stone Cracks & Moss Joints
+                          ctx.strokeStyle = 'rgba(15, 23, 42, 0.6)';
+                          ctx.lineWidth = 1;
+                          ctx.beginPath();
+                          ctx.moveTo(-8, -4); ctx.lineTo(-2, 2); ctx.lineTo(6, -2);
+                          ctx.stroke();
+            
+                          if (microVal > 0.88) {
+                            // Purple/Emerald Glowing Rune in Dungeon Floor
+                            ctx.fillStyle = map.theme === 'zuma_temple' ? 'rgba(192, 132, 252, 0.6)' : 'rgba(52, 211, 153, 0.5)';
+                            ctx.shadowColor = map.theme === 'zuma_temple' ? '#a855f7' : '#10b981';
+                            ctx.shadowBlur = 8;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                            ctx.fill();
+                          }
+                        } else if (map.theme === 'sabak_castle') {
+                          // Imperial Gold Dragon-Inlay Floor Detail
+                          if (microVal > 0.88) {
+                            ctx.strokeStyle = 'rgba(234, 179, 8, 0.7)';
+                            ctx.lineWidth = 1.2;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                            ctx.stroke();
+                          }
+                        } else if (map.theme === 'red_moon') {
+                          // Active Lava Ember Vent
+                          if (microVal > 0.85) {
+                            ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
+                            ctx.shadowColor = '#dc2626';
+                            ctx.shadowBlur = 10;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+                            ctx.fill();
+                          }
+                        }
+                        ctx.restore();
+                      }
+                    }
+                  }
+            
+                  
+         })(cctx, toCacheScreen, toCacheScreenFlat, cacheCssW, cacheCssH, cacheBaseCamX, cacheBaseCamY);
       }
+      
+      // Draw the Bitmap Cache to main canvas
+      const cacheCamIsoX = Math.round((_terrainCacheCamX - _terrainCacheCamY) * (tileWidth / 2));
+      const cacheCamIsoY = Math.round((_terrainCacheCamX + _terrainCacheCamY) * (tileHeight / 2));
+      
+      const drawOffsetX = (cacheCamIsoX - camIsoX_pixel);
+      const drawOffsetY = (cacheCamIsoY - camIsoY_pixel);
+      
+      const drawX = Math.round(screenCenterX - (cacheCssW / 2) + drawOffsetX);
+      const drawY = Math.round(screenCenterY - (cacheCssH / 2) + drawOffsetY);
+      
+      ctx.drawImage(_terrainCacheCanvas!, drawX, drawY, cacheCssW, cacheCssH);
+      // ------------------------------
 
-      // 2.5 Draw Footprints & Ripples
+      // --- DYNAMIC WEATHER GROUND EFFECTS ---
+      if (currentWeather === 'rain' || map.theme === 'green_field') {
+        ctx.save();
+        const baseGx = Math.floor(camX);
+        const baseGy = Math.floor(camY);
+        const radius = 15;
+        
+        for (let x = -radius; x <= radius; x++) {
+          for (let y = -radius; y <= radius; y++) {
+             const gx = baseGx + x;
+             const gy = baseGy + y;
+             if (gx < 0 || gy < 0 || gx >= map.width || gy >= map.height) continue;
+             
+             // Pseudo-random value for this tile
+             const seed = Math.sin(gx * 12.9898 + gy * 78.233) * 43758.5453;
+             const rand = seed - Math.floor(seed);
+             
+             const { sx, sy } = toScreen(gx, gy);
+             if (sx < -50 || sx > width + 50 || sy < -50 || sy > height + 50) continue;
+             
+             // Rain Puddle Ripples
+             if (currentWeather === 'rain' && rand > 0.7) {
+                const puddlePhase = (now * 0.0015 + rand * 100) % (Math.PI * 2);
+                const puddleScale = 1 + Math.sin(puddlePhase) * 0.1;
+                
+                // Draw puddle base
+                ctx.beginPath();
+                ctx.ellipse(sx, sy + 5, 20 * puddleScale, 10 * puddleScale, 0, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(14, 116, 144, 0.15)'; // Wet puddle
+                ctx.fill();
+                
+                // Occasional raindrop ripple on puddle
+                const rippleTime = (now + rand * 10000) % 2000;
+                if (rippleTime < 600) {
+                   const rProg = rippleTime / 600;
+                   ctx.beginPath();
+                   ctx.ellipse(sx + (rand - 0.5) * 10, sy + 5 + (rand - 0.5) * 5, 10 * rProg, 5 * rProg, 0, 0, Math.PI * 2);
+                   ctx.strokeStyle = `rgba(255, 255, 255, ${(1 - rProg) * 0.4})`;
+                   ctx.lineWidth = 1;
+                   ctx.stroke();
+                }
+             }
+             
+             // Falling Leaves / Wind sweeping across ground
+             if (map.theme === 'green_field' && rand > 0.85) {
+                const windPhase = (now * 0.002 + gx * 0.5 + gy * 0.5) % (Math.PI * 2);
+                const isSweeping = Math.sin(windPhase) > 0.5;
+                if (isSweeping) {
+                   const leafX = sx + Math.cos(windPhase * 2 + rand * 10) * 15;
+                   const leafY = sy + Math.sin(windPhase * 2 + rand * 10) * 8 - 2;
+                   
+                   ctx.save();
+                   ctx.translate(leafX, leafY);
+                   ctx.rotate(windPhase * 3 + rand * 5);
+                   ctx.beginPath();
+                   ctx.ellipse(0, 0, 3, 1.5, 0, 0, Math.PI * 2);
+                   ctx.fillStyle = rand > 0.92 ? 'rgba(250, 204, 21, 0.6)' : 'rgba(74, 222, 128, 0.6)'; // Yellow or Green leaf
+                   ctx.fill();
+                   ctx.restore();
+                }
+             }
+          }
+        }
+        ctx.restore();
+      }
+      // ----------------------------------------
+// 2.5 Draw Footprints & Ripples
       footprintsRef.current.forEach(f => {
         const { sx, sy } = toScreen(f.x, f.y);
         const elapsed = now - f.time;
@@ -856,52 +1176,64 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
           ctx.save();
 
           if (obs.type === 'tree') {
-            // AO Shadow (Premium PBR)
+            // Giant Towering Tree (参天大树)
+            // AO Shadow
             ctx.beginPath();
-            ctx.ellipse(sx, sy, 28, 14, 0, 0, Math.PI * 2);
-            const treeAOGrad = ctx.createRadialGradient(sx, sy, 4, sx, sy, 28);
+            ctx.ellipse(sx, sy, 35, 18, 0, 0, Math.PI * 2);
+            const treeAOGrad = ctx.createRadialGradient(sx, sy, 4, sx, sy, 35);
             treeAOGrad.addColorStop(0, 'rgba(0,0,0,0.9)');
             treeAOGrad.addColorStop(1, 'rgba(0,0,0,0)');
             ctx.fillStyle = treeAOGrad;
             ctx.fill();
 
-            // Trunk
-            const trunkGrad = ctx.createLinearGradient(sx - 6, 0, sx + 6, 0);
-            trunkGrad.addColorStop(0, '#451a03');
-            trunkGrad.addColorStop(0.5, '#78350f');
-            trunkGrad.addColorStop(1, '#27272a');
+            const isSnake = map.theme === 'snake_valley';
+            
+            // Towering Trunk
+            const trunkGrad = ctx.createLinearGradient(sx - 10, 0, sx + 10, 0);
+            trunkGrad.addColorStop(0, '#291002');
+            trunkGrad.addColorStop(0.5, '#5c2607');
+            trunkGrad.addColorStop(1, '#1c1917');
             ctx.fillStyle = trunkGrad;
             ctx.beginPath();
-            ctx.moveTo(sx - 5, sy);
-            ctx.lineTo(sx - 3, sy - 35);
-            ctx.lineTo(sx + 3, sy - 35);
-            ctx.lineTo(sx + 5, sy);
+            ctx.moveTo(sx - 8, sy);
+            ctx.lineTo(sx - 3, sy - 90);
+            ctx.lineTo(sx + 3, sy - 90);
+            ctx.lineTo(sx + 8, sy);
             ctx.closePath();
             ctx.fill();
+            
+            // Bark texture lines
+            ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+            ctx.beginPath();
+            ctx.moveTo(sx - 4, sy); ctx.lineTo(sx - 1, sy - 85);
+            ctx.moveTo(sx + 4, sy); ctx.lineTo(sx + 1, sy - 85);
+            ctx.stroke();
 
-            // Premium 3D Leaf Canopy
-            const sway = Math.sin(now * 0.002 + obs.x) * 2;
-            const treeTopY = sy - 35;
-            const isSnake = map.theme === 'snake_valley';
+            // Premium 3D Leaf Canopy - Massive Scale
+            const sway = Math.sin(now * 0.0015 + obs.x) * 4;
+            const treeTopY = sy - 90;
 
-            const drawCanopyBubble = (cx, cy, r, baseColor, highlightColor) => {
+            const drawCanopyBubble = (cx: number, cy: number, rx: number, ry: number, baseColor: string, highlightColor: string) => {
               ctx.beginPath();
-              ctx.arc(cx, cy, r, 0, Math.PI * 2);
-              const canopyGrad = ctx.createRadialGradient(cx - r*0.3, cy - r*0.3, r*0.1, cx, cy, r);
+              ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+              const canopyGrad = ctx.createRadialGradient(cx - rx*0.3, cy - ry*0.3, rx*0.1, cx, cy, rx);
               canopyGrad.addColorStop(0, highlightColor);
-              canopyGrad.addColorStop(0.5, baseColor);
-              canopyGrad.addColorStop(1, '#022c22'); // dark edge shadow
+              canopyGrad.addColorStop(0.6, baseColor);
+              canopyGrad.addColorStop(1, '#022c22'); 
               ctx.fillStyle = canopyGrad;
-              ctx.shadowColor = 'rgba(0,0,0,0.4)';
-              ctx.shadowBlur = 8;
+              ctx.shadowColor = 'rgba(0,0,0,0.5)';
+              ctx.shadowBlur = 10;
               ctx.fill();
               ctx.shadowBlur = 0;
             };
 
-            drawCanopyBubble(sx + sway, treeTopY - 10, 26, isSnake ? '#047857' : '#15803d', isSnake ? '#10b981' : '#4ade80');
-            drawCanopyBubble(sx - 8 + sway, treeTopY - 22, 18, isSnake ? '#059669' : '#16a34a', isSnake ? '#34d399' : '#86efac');
-            drawCanopyBubble(sx + 6 + sway, treeTopY - 28, 14, isSnake ? '#10b981' : '#22c55e', '#bbf7d0');
-
+            // Bottom layer
+            drawCanopyBubble(sx + sway*0.5, treeTopY, 45, 30, isSnake ? '#047857' : '#15803d', isSnake ? '#059669' : '#16a34a');
+            // Middle layer
+            drawCanopyBubble(sx - 15 + sway*0.8, treeTopY - 20, 35, 25, isSnake ? '#059669' : '#16a34a', isSnake ? '#10b981' : '#22c55e');
+            drawCanopyBubble(sx + 15 + sway*0.8, treeTopY - 25, 30, 22, isSnake ? '#059669' : '#15803d', isSnake ? '#10b981' : '#4ade80');
+            // Top layer
+            drawCanopyBubble(sx + sway, treeTopY - 45, 25, 20, isSnake ? '#10b981' : '#22c55e', '#bbf7d0');
           } else if (obs.type === 'rock') {
             // Premium 3D Rock Shadow
             ctx.beginPath();
@@ -1120,21 +1452,24 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
             drawBushCluster(sx + sway, sy - 16, 14, '#166534', '#86efac');
 
           } else if (obs.type === 'grass') {
-            // Swaying Tall Grass Clump
-            const sway = Math.sin(now * 0.004 + obs.x + obs.y) * 4;
-            ctx.strokeStyle = '#22c55e';
-            ctx.lineWidth = 2;
+            // Vibrant Lush Green Grass (绿油油的草坪)
+            const sway = Math.sin(now * 0.004 + obs.x + obs.y) * 5;
             ctx.lineCap = 'round';
-            for (let i = -3; i <= 3; i++) {
+            
+            // Draw a dense cluster of grass blades
+            for (let i = -5; i <= 5; i++) {
               ctx.beginPath();
-              ctx.moveTo(sx + i * 4, sy);
+              ctx.moveTo(sx + i * 3, sy);
               ctx.quadraticCurveTo(
-                sx + i * 3 + sway * 0.5,
-                sy - 10,
-                sx + i * 2 + sway + (i % 2) * 2,
-                sy - 18 - Math.abs(i)
+                sx + i * 2 + sway * 0.7,
+                sy - 8,
+                sx + i * 1.5 + sway + (i % 2) * 3,
+                sy - 14 - Math.random() * 5 - Math.abs(i)*0.5
               );
-              ctx.strokeStyle = i % 2 === 0 ? '#4ade80' : '#16a34a';
+              ctx.lineWidth = 2 + Math.random();
+              // Bright spring green colors
+              const colors = ['#22c55e', '#4ade80', '#16a34a', '#86efac'];
+              ctx.strokeStyle = colors[(Math.abs(i) + Math.floor(now*0.001)) % colors.length];
               ctx.stroke();
             }
 
@@ -1539,10 +1874,47 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
       });
 
       // 5. Draw Monsters (High-end Monster & Boss Visual Graphics)
+      const getMonsterScale = (m: { level?: number; maxHp?: number; isBoss?: boolean; templateId?: string; name?: string }): number => {
+        const maxHp = m.maxHp || 50;
+        
+        if (m.isBoss) {
+          const tId = m.templateId || '';
+          const name = m.name || '';
+          let scale = 2.2;
+          
+          if (tId === 'ancient_magic_dragon' || name.includes('魔龙')) scale = 3.6;
+          else if (tId === 'dragon_god' || name.includes('龙神')) scale = 3.2;
+          else if (tId === 'abyss_lord' || name.includes('深渊魔神')) scale = 3.0;
+          else if (tId === 'red_moon_demon' || name.includes('赤月')) scale = 2.8;
+          else if (tId === 'abyss_knight' || name.includes('骑士')) scale = 2.6;
+          else if (tId === 'devil_lord' || name.includes('恶魔领主')) scale = 2.5;
+          else if (tId === 'zuma_leader' || name.includes('祖玛')) scale = 2.4;
+          else if (tId === 'woma_leader' || name.includes('沃玛')) scale = 2.2;
+          else if (tId === 'sabak_guard' || name.includes('禁卫')) scale = 2.1;
+          else if (tId === 'white_boar' || name.includes('野猪')) scale = 2.0;
+          
+          if (maxHp >= 30000000) scale = Math.max(scale, 4.8);
+          else if (maxHp >= 20000000) scale = Math.max(scale, 4.5);
+          else if (maxHp >= 10000000) scale = Math.max(scale, 4.0);
+          else if (maxHp >= 5000000) scale = Math.max(scale, 3.5);
+          
+          return scale;
+        }
+        
+        const baseLvl = m.level || 1;
+        if (maxHp >= 1000000) return 2.2;
+        if (maxHp >= 500000) return 1.8;
+        if (maxHp >= 50000) return 1.5;
+        if (maxHp >= 3000) return 1.35;
+        
+        return Math.max(0.85, Math.min(1.35, 0.85 + (baseLvl / 100) * 0.45));
+      };
+
       engine.monsters.forEach(m => {
         if (m.hp <= 0 && (!m.deathTime || now - m.deathTime > 600)) return;
         const { sx, sy } = toScreen(m.x, m.y);
         const isTargeted = engine.targetMonsterId === m.id;
+        const monsterScale = getMonsterScale(m);
 
         ctx.save();
         
@@ -1555,17 +1927,20 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         ctx.globalAlpha *= alpha;
 
         // A. Ground Shadow
+        const shadowW = (m.isBoss ? 28 : 16) * Math.min(2.0, Math.max(0.9, monsterScale * 0.8));
+        const shadowH = (m.isBoss ? 14 : 8) * Math.min(2.0, Math.max(0.9, monsterScale * 0.8));
         ctx.beginPath();
-        ctx.ellipse(sx, sy, m.isBoss ? 28 : 16, m.isBoss ? 14 : 8, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx, sy, shadowW, shadowH, 0, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
         ctx.fill();
 
         // B. Runic Rarity Magic Circle & Targeting Reticle
         if (m.isBoss) {
           // Boss Hellfire Magic Circle on Ground
+          const circleR = 36 * Math.min(2.2, Math.max(1.0, monsterScale * 0.75));
           const bossRot = (now * 0.0012) % (Math.PI * 2);
           ctx.beginPath();
-          ctx.ellipse(sx, sy, 36, 18, 0, 0, Math.PI * 2);
+          ctx.ellipse(sx, sy, circleR, circleR * 0.5, 0, 0, Math.PI * 2);
           ctx.strokeStyle = '#ef4444';
           ctx.lineWidth = 2.5;
           ctx.shadowColor = '#dc2626';
@@ -1575,8 +1950,8 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
           // Rotating Runic Star Spikes
           for (let i = 0; i < 6; i++) {
             const rotAngle = bossRot + (i * Math.PI) / 3;
-            const rx = sx + Math.cos(rotAngle) * 36;
-            const ry = sy + Math.sin(rotAngle) * 18;
+            const rx = sx + Math.cos(rotAngle) * circleR;
+            const ry = sy + Math.sin(rotAngle) * (circleR * 0.5);
 
             ctx.beginPath();
             ctx.arc(rx, ry, 3.5, 0, Math.PI * 2);
@@ -1589,7 +1964,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
           // Flame Ember Particles rising around boss
           for (let i = 0; i < 4; i++) {
             const emberAngle = (now * 0.002) + i * 1.57;
-            const ex = sx + Math.cos(emberAngle) * 22;
+            const ex = sx + Math.cos(emberAngle) * (circleR * 0.6);
             const ey = sy - 12 + Math.sin(emberAngle * 1.5) * 8 - ((now * 0.02 + i * 15) % 25);
             ctx.beginPath();
             ctx.arc(ex, ey, 2, 0, Math.PI * 2);
@@ -1601,7 +1976,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         } else if (isTargeted) {
           // Targeted Highlight Ring
           ctx.beginPath();
-          ctx.ellipse(sx, sy, 22, 11, 0, 0, Math.PI * 2);
+          ctx.ellipse(sx, sy, 22 * monsterScale, 11 * monsterScale, 0, 0, Math.PI * 2);
           ctx.strokeStyle = '#ef4444';
           ctx.lineWidth = 2;
           ctx.shadowColor = '#f87171';
@@ -1613,7 +1988,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         const bobY = Math.sin(now * 0.004 + m.id.charCodeAt(0) % 10) * (m.isBoss ? 4 : 2.5);
 
         // D. High-End 2D Creature Visual Sprite Renderer
-        const entityCenterY = sy - (m.isBoss ? 26 : 16) + bobY;
+        const entityCenterY = sy - (m.isBoss ? 24 * Math.min(2.5, monsterScale) : 16 * monsterScale) + bobY;
         const mName = m.name;
         const typeKey = m.templateId || (
           mName.includes('鸡') ? 'chicken' :
@@ -1625,6 +2000,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
           mName.includes('沃玛') ? 'woma_leader' :
           mName.includes('祖玛') ? 'zuma_leader' :
           mName.includes('赤月') ? 'red_moon_demon' :
+          (mName.includes('恶魔领主') || mName.includes('恶魔战士')) ? 'devil_lord' :
+          (mName.includes('龙神') || mName.includes('魔龙') || mName.includes('龙')) ? 'dragon_god' :
+          (mName.includes('深渊魔神') || mName.includes('深渊守望')) ? 'abyss_lord' :
+          mName.includes('骑士') ? 'abyss_knight' :
           (mName.includes('卫') || mName.includes('禁卫')) ? 'sabak_guard' :
           (mName.includes('稻草') ? 'scarecrow' : 'default')
         );
@@ -1634,14 +2013,47 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         // Check recent attack lunge (shift monster slightly towards player when attacking)
         let lungeX = 0;
         let lungeY = 0;
-        if (now - m.lastAtkTime < 220) {
+        let windupScale = 1;
+        let isFlashing = false;
+        
+        if (m.isAttacking) {
+          // Attack Pre-cast (Wind-up)
+          const elapsed = now - (m.attackStartTime || 0);
+          const windupTime = m.isBoss ? 600 : 400;
+          const progress = Math.min(1, elapsed / windupTime);
+          
           const lungeAngle = Math.atan2(engine.character.y - m.y, engine.character.x - m.x);
-          lungeX = Math.cos(lungeAngle) * 8;
-          lungeY = Math.sin(lungeAngle) * 8;
+          const pullbackDist = m.isBoss ? 8 : 4;
+          lungeX = -Math.cos(lungeAngle) * pullbackDist * progress;
+          lungeY = -Math.sin(lungeAngle) * pullbackDist * progress;
+          
+          windupScale = 1 + (0.1 * progress);
+          
+          if (m.isBoss) {
+            lungeX += (Math.random() - 0.5) * 6 * progress;
+            lungeY += (Math.random() - 0.5) * 6 * progress;
+            isFlashing = Math.floor(now / 50) % 2 === 0;
+          }
+        } else if (now - m.lastAtkTime < 220) {
+          // Attack Execute (Lunge)
+          const lungeAngle = Math.atan2(engine.character.y - m.y, engine.character.x - m.x);
+          const lungeIntensity = m.isBoss ? 16 : 8;
+          lungeX = Math.cos(lungeAngle) * lungeIntensity;
+          lungeY = Math.sin(lungeAngle) * lungeIntensity;
         }
 
         const renderX = sx + lungeX;
         const renderY = entityCenterY + lungeY;
+
+        // Apply dynamic monster size scale centered at (renderX, renderY)
+        ctx.translate(renderX, renderY);
+        ctx.scale(monsterScale * windupScale, monsterScale * windupScale);
+        
+        if (isFlashing) {
+          ctx.filter = 'brightness(200%) sepia(100%) hue-rotate(-50deg) saturate(500%)';
+        }
+        
+        ctx.translate(-renderX, -renderY);
 
         switch (typeKey) {
           case 'chicken': {
@@ -2261,6 +2673,263 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
             break;
           }
 
+          case 'devil_lord': {
+            // 【Boss】恶魔领主 - Dark obsidian hell armor, giant crimson horns, dark fire wings, glowing lava core
+            ctx.save();
+            ctx.fillStyle = '#831843';
+            ctx.shadowColor = '#f43f5e';
+            ctx.shadowBlur = 14;
+            ctx.beginPath();
+            ctx.moveTo(renderX - 10, renderY - 10);
+            ctx.quadraticCurveTo(renderX - 42, renderY - 38, renderX - 25, renderY - 45);
+            ctx.quadraticCurveTo(renderX - 20, renderY - 25, renderX - 8, renderY - 18);
+            ctx.moveTo(renderX + 10, renderY - 10);
+            ctx.quadraticCurveTo(renderX + 42, renderY - 38, renderX + 25, renderY - 45);
+            ctx.quadraticCurveTo(renderX + 20, renderY - 25, renderX + 8, renderY - 18);
+            ctx.fill();
+            ctx.restore();
+
+            ctx.beginPath();
+            ctx.moveTo(renderX - 15, renderY - 14);
+            ctx.lineTo(renderX + 15, renderY - 14);
+            ctx.lineTo(renderX + 11, renderY + 12);
+            ctx.lineTo(renderX - 11, renderY + 12);
+            ctx.closePath();
+            ctx.fillStyle = '#1e1b4b';
+            ctx.fill();
+            ctx.strokeStyle = '#f43f5e';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(renderX, renderY - 2, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#fbbf24';
+            ctx.shadowColor = '#f59e0b';
+            ctx.shadowBlur = 10;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(renderX, renderY - 22, 10, 0, Math.PI * 2);
+            ctx.fillStyle = '#0f172a';
+            ctx.fill();
+
+            ctx.fillStyle = '#f43f5e';
+            ctx.beginPath();
+            ctx.moveTo(renderX - 6, renderY - 26);
+            ctx.quadraticCurveTo(renderX - 22, renderY - 42, renderX - 12, renderY - 46);
+            ctx.lineTo(renderX - 4, renderY - 28);
+            ctx.moveTo(renderX + 6, renderY - 26);
+            ctx.quadraticCurveTo(renderX + 22, renderY - 42, renderX + 12, renderY - 46);
+            ctx.lineTo(renderX + 4, renderY - 28);
+            ctx.fill();
+
+            ctx.fillStyle = '#fef08a';
+            ctx.shadowColor = '#ef4444';
+            ctx.shadowBlur = 10;
+            ctx.fillRect(renderX - 5, renderY - 23, 3, 2);
+            ctx.fillRect(renderX + 2, renderY - 23, 3, 2);
+
+            ctx.strokeStyle = '#fbbf24';
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = '#f59e0b';
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.moveTo(renderX - 16, renderY + 8);
+            ctx.lineTo(renderX - 26, renderY - 28);
+            ctx.moveTo(renderX + 16, renderY + 8);
+            ctx.lineTo(renderX + 26, renderY - 28);
+            ctx.stroke();
+            break;
+          }
+
+          case 'dragon_god': {
+            // 【世界Boss】极光龙神 & 远古魔龙 - Majestic dragon scales, spreading wings, snout smoke, dragon heart
+            const isAncient = mName.includes('远古') || mName.includes('魔龙');
+            const mainColor = isAncient ? '#18181b' : '#14532d';
+            const scaleColor = isAncient ? '#3f3f46' : '#22c55e';
+            const glowColor = isAncient ? '#c084fc' : '#4ade80';
+
+            ctx.save();
+            ctx.fillStyle = scaleColor;
+            ctx.shadowColor = glowColor;
+            ctx.shadowBlur = 16;
+            ctx.beginPath();
+            ctx.moveTo(renderX - 12, renderY - 10);
+            ctx.quadraticCurveTo(renderX - 55, renderY - 45, renderX - 35, renderY - 55);
+            ctx.quadraticCurveTo(renderX - 25, renderY - 30, renderX - 10, renderY - 18);
+            ctx.moveTo(renderX + 12, renderY - 10);
+            ctx.quadraticCurveTo(renderX + 55, renderY - 45, renderX + 35, renderY - 55);
+            ctx.quadraticCurveTo(renderX + 25, renderY - 30, renderX + 10, renderY - 18);
+            ctx.fill();
+            ctx.strokeStyle = glowColor;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY - 2, 18, 24, 0, 0, Math.PI * 2);
+            ctx.fillStyle = mainColor;
+            ctx.fill();
+            ctx.strokeStyle = glowColor;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(renderX - 10, renderY - 12); ctx.lineTo(renderX + 10, renderY - 12);
+            ctx.moveTo(renderX - 12, renderY - 4);  ctx.lineTo(renderX + 12, renderY - 4);
+            ctx.moveTo(renderX - 10, renderY + 4);  ctx.lineTo(renderX + 10, renderY + 4);
+            ctx.stroke();
+
+            const pulse = Math.sin(now * 0.006) * 2;
+            ctx.beginPath();
+            ctx.arc(renderX, renderY - 12, 6 + pulse, 0, Math.PI * 2);
+            ctx.fillStyle = isAncient ? '#e879f9' : '#facc15';
+            ctx.shadowColor = glowColor;
+            ctx.shadowBlur = 15;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY - 28, 12, 10, 0, 0, Math.PI * 2);
+            ctx.fillStyle = mainColor;
+            ctx.fill();
+            ctx.strokeStyle = glowColor;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY - 34, 8, 5, 0, 0, Math.PI * 2);
+            ctx.fillStyle = scaleColor;
+            ctx.fill();
+
+            const smokeOff = Math.sin(now * 0.01) * 3;
+            ctx.fillStyle = glowColor;
+            ctx.beginPath();
+            ctx.arc(renderX - 4 + smokeOff, renderY - 38, 2, 0, Math.PI * 2);
+            ctx.arc(renderX + 4 - smokeOff, renderY - 38, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#f59e0b';
+            ctx.shadowColor = '#fde047';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.moveTo(renderX - 8, renderY - 34); ctx.lineTo(renderX - 22, renderY - 50); ctx.lineTo(renderX - 4, renderY - 36);
+            ctx.moveTo(renderX + 8, renderY - 34); ctx.lineTo(renderX + 22, renderY - 50); ctx.lineTo(renderX + 4, renderY - 36);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = '#fef08a';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(renderX - 5, renderY - 29, 2.5, 0, Math.PI * 2);
+            ctx.arc(renderX + 5, renderY - 29, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+          }
+
+          case 'abyss_lord': {
+            // 【终极神明】深渊魔神 - Abyssal dimensional ring, cosmic void eye, orbiting void shards
+            const voidRot = now * 0.002;
+            ctx.save();
+            ctx.strokeStyle = '#c084fc';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#a855f7';
+            ctx.shadowBlur = 16;
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY, 32, 12, voidRot, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY - 8, 18, 22, 0, 0, Math.PI * 2);
+            const voidGrad = ctx.createRadialGradient(renderX, renderY - 8, 2, renderX, renderY - 8, 22);
+            voidGrad.addColorStop(0, '#581c87');
+            voidGrad.addColorStop(0.6, '#1e1b4b');
+            voidGrad.addColorStop(1, '#020617');
+            ctx.fillStyle = voidGrad;
+            ctx.fill();
+            ctx.strokeStyle = '#e879f9';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY - 14, 10, 6, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#f0abfc';
+            ctx.shadowColor = '#d8b4fe';
+            ctx.shadowBlur = 18;
+            ctx.fill();
+
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            ctx.arc(renderX, renderY - 14, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            for (let i = 0; i < 4; i++) {
+              const angle = voidRot + (i * Math.PI) / 2;
+              const cx = renderX + Math.cos(angle) * 28;
+              const cy = renderY - 8 + Math.sin(angle) * 14;
+              ctx.beginPath();
+              ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+              ctx.fillStyle = '#e879f9';
+              ctx.shadowColor = '#c084fc';
+              ctx.shadowBlur = 10;
+              ctx.fill();
+            }
+            break;
+          }
+
+          case 'abyss_knight': {
+            // 【Boss】深渊魔王骑士 - Mounted dark knight on nightmare steed with abyssal lance
+            ctx.beginPath();
+            ctx.ellipse(renderX, renderY + 2, 18, 10, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#1e1b4b';
+            ctx.fill();
+            ctx.strokeStyle = '#818cf8';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(renderX + 16, renderY - 6, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#0f172a';
+            ctx.fill();
+
+            ctx.fillStyle = '#818cf8';
+            ctx.shadowColor = '#6366f1';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(renderX + 18, renderY - 7, 1.5, 0, Math.PI * 2);
+            ctx.arc(renderX - 12, renderY + 12, 2.5, 0, Math.PI * 2);
+            ctx.arc(renderX + 12, renderY + 12, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.rect(renderX - 6, renderY - 20, 12, 16);
+            ctx.fillStyle = '#312e81';
+            ctx.fill();
+            ctx.strokeStyle = '#c084fc';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(renderX, renderY - 24, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#1e1b4b';
+            ctx.fill();
+
+            ctx.fillStyle = '#f43f5e';
+            ctx.fillRect(renderX - 4, renderY - 25, 8, 2);
+
+            ctx.strokeStyle = '#e879f9';
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = '#c084fc';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.moveTo(renderX + 4, renderY - 14);
+            ctx.lineTo(renderX + 32, renderY - 32);
+            ctx.stroke();
+            break;
+          }
+
           default: {
             // Premium 2.5D/3D Monster Rendering
             const mColor = m.color || '#3b82f6';
@@ -2268,31 +2937,26 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
             
             // Breathing & Scaling
             const breath = Math.sin(now * 0.004 + m.x) * (isBoss ? 3 : 1.5);
-            const scale = isBoss ? 1.6 : 1;
             
-            ctx.save();
-            ctx.translate(renderX, renderY);
-            ctx.scale(scale, scale);
-
             // Boss Aura Glow
             if (isBoss) {
-              const auraGrad = ctx.createRadialGradient(0, -15, 0, 0, -15, 40);
+              const auraGrad = ctx.createRadialGradient(renderX, renderY - 15, 0, renderX, renderY - 15, 40);
               auraGrad.addColorStop(0, 'rgba(239, 68, 68, 0.4)'); // Red glow
               auraGrad.addColorStop(1, 'rgba(0,0,0,0)');
               ctx.fillStyle = auraGrad;
               ctx.beginPath();
-              ctx.arc(0, -15, 40, 0, Math.PI * 2);
+              ctx.arc(renderX, renderY - 15, 40, 0, Math.PI * 2);
               ctx.fill();
             }
 
             // 1. Monster Body Core (3D Shaded Oval)
-            const bodyGrad = ctx.createRadialGradient(-3, -20 - breath, 2, 0, -15 - breath, 22);
+            const bodyGrad = ctx.createRadialGradient(renderX - 3, renderY - 20 - breath, 2, renderX, renderY - 15 - breath, 22);
             bodyGrad.addColorStop(0, '#ffffff'); // Specular highlight
             bodyGrad.addColorStop(0.15, mColor);
             bodyGrad.addColorStop(0.8, 'rgba(0,0,0,0.85)'); // Dark shadow falloff
             
             ctx.beginPath();
-            ctx.ellipse(0, -15 - breath, 15, 20, 0, 0, Math.PI * 2);
+            ctx.ellipse(renderX, renderY - 15 - breath, 15, 20, 0, 0, Math.PI * 2);
             ctx.fillStyle = bodyGrad;
             ctx.shadowColor = 'rgba(0,0,0,0.6)';
             ctx.shadowBlur = 10;
@@ -2300,13 +2964,13 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
             
             // 2. Glowing Eyes (Fierce V shape)
             ctx.beginPath();
-            ctx.moveTo(-7, -22 - breath);
-            ctx.lineTo(-2, -19 - breath);
-            ctx.lineTo(-5, -17 - breath);
+            ctx.moveTo(renderX - 7, renderY - 22 - breath);
+            ctx.lineTo(renderX - 2, renderY - 19 - breath);
+            ctx.lineTo(renderX - 5, renderY - 17 - breath);
             ctx.closePath();
-            ctx.moveTo(7, -22 - breath);
-            ctx.lineTo(2, -19 - breath);
-            ctx.lineTo(5, -17 - breath);
+            ctx.moveTo(renderX + 7, renderY - 22 - breath);
+            ctx.lineTo(renderX + 2, renderY - 19 - breath);
+            ctx.lineTo(renderX + 5, renderY - 17 - breath);
             ctx.closePath();
             ctx.fillStyle = '#fef08a';
             ctx.shadowColor = '#f59e0b';
@@ -2314,39 +2978,38 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
             ctx.fill();
 
             // 3. Metallic Spikes/Horns
-            const armorGrad = ctx.createLinearGradient(-15, -40, 15, -15);
+            const armorGrad = ctx.createLinearGradient(renderX - 15, renderY - 40, renderX + 15, renderY - 15);
             armorGrad.addColorStop(0, '#94a3b8');
             armorGrad.addColorStop(0.5, '#475569');
             armorGrad.addColorStop(1, '#0f172a');
             ctx.fillStyle = armorGrad;
-            ctx.shadowBlur = 0; // turn off shadow for sharp details
+            ctx.shadowBlur = 0;
             
             // Left Horn
             ctx.beginPath();
-            ctx.moveTo(-10, -28 - breath);
-            ctx.lineTo(-18, -42 - breath);
-            ctx.lineTo(-4, -32 - breath);
+            ctx.moveTo(renderX - 10, renderY - 28 - breath);
+            ctx.lineTo(renderX - 18, renderY - 42 - breath);
+            ctx.lineTo(renderX - 4, renderY - 32 - breath);
             ctx.fill();
             // Right Horn
             ctx.beginPath();
-            ctx.moveTo(10, -28 - breath);
-            ctx.lineTo(18, -42 - breath);
-            ctx.lineTo(4, -32 - breath);
+            ctx.moveTo(renderX + 10, renderY - 28 - breath);
+            ctx.lineTo(renderX + 18, renderY - 42 - breath);
+            ctx.lineTo(renderX + 4, renderY - 32 - breath);
             ctx.fill();
 
             // 4. Energy Crystal Core on Chest
             ctx.beginPath();
-            ctx.moveTo(0, -12 - breath);
-            ctx.lineTo(4, -5 - breath);
-            ctx.lineTo(0, 2 - breath);
-            ctx.lineTo(-4, -5 - breath);
+            ctx.moveTo(renderX, renderY - 12 - breath);
+            ctx.lineTo(renderX + 4, renderY - 5 - breath);
+            ctx.lineTo(renderX, renderY + 2 - breath);
+            ctx.lineTo(renderX - 4, renderY - 5 - breath);
             ctx.closePath();
             ctx.fillStyle = '#38bdf8';
             ctx.shadowColor = '#0ea5e9';
             ctx.shadowBlur = 10;
             ctx.fill();
 
-            ctx.restore();
             break;
           }
         }
@@ -2358,10 +3021,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
 
         if (m.isBoss) {
           // Boss Level Badge & Name Header
-          const barW = 80;
+          const barW = Math.min(130, Math.floor(80 * Math.sqrt(monsterScale)));
           const barH = 7;
           const barX = sx - barW / 2;
-          const barY = entityCenterY - 42;
+          const barY = entityCenterY - Math.floor(28 * monsterScale + 18);
 
           // Header Name & Level String
           ctx.font = 'bold 11px sans-serif';
@@ -2386,10 +3049,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
           ctx.fillRect(barX, barY, barW * hpRatio, barH);
         } else {
           // Normal Monster Health Bar & Name
-          const barW = 38;
+          const barW = Math.min(64, Math.floor(38 * Math.sqrt(monsterScale)));
           const barH = 4;
           const barX = sx - barW / 2;
-          const barY = entityCenterY - 26;
+          const barY = entityCenterY - Math.floor(18 * monsterScale + 12);
 
           // Name Tag
           ctx.font = 'bold 10px sans-serif';
@@ -2523,7 +3186,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
       const mountBobY = isMounted ? Math.sin(now * 0.007) * 3.5 : 0;
       const px = mpx;
       const py = mpy;
-      const playerCenterY = mpy - (isMounted ? 32 : 20) + charBobY + mountBobY;
+      const playerCenterY = mpy - (isMounted ? 42 : 30) + charBobY + mountBobY;
 
       // Draw Mount Differentiated Motion Trail Effects BEFORE character body
       if (isMounted && mountTrailRef.current.length > 0) {
@@ -2673,38 +3336,30 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
 
         // 2. Large Divine Beast Body Avatar Under Player with Dynamic Tilt on Movement
         const beastY = py - 14 + mountBobY;
+        drawMountBeastOnCanvas(
+          ctx,
+          px,
+          beastY,
+          mTier,
+          now,
+          mtConfig.icon,
+          mtConfig.auraColor || '#f59e0b',
+          1.0,
+          curM.vx
+        );
+
+        // Reins connecting to player hands
         ctx.save();
-        ctx.translate(px, beastY);
-
-        // Lean tilt based on movement velocity curM.vx
-        const tiltAngle = Math.max(-0.15, Math.min(0.15, curM.vx * 0.8));
-        ctx.rotate(tiltAngle);
-
-        ctx.font = '50px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.shadowColor = mtConfig.auraColor || '#f59e0b';
-        ctx.shadowBlur = 20 + mTier * 1.5;
-        ctx.fillText(mtConfig.icon, 0, 0);
-
-        // 3. Saddle & Golden Reins
         ctx.beginPath();
-        ctx.moveTo(-14, 2);
-        ctx.lineTo(14, 2);
-        ctx.strokeStyle = '#78350f';
-        ctx.lineWidth = 3.5;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(-10, 2);
-        ctx.lineTo(-6, playerCenterY - beastY + 12);
-        ctx.moveTo(10, 2);
-        ctx.lineTo(6, playerCenterY - beastY + 12);
+        ctx.moveTo(px - 10, beastY);
+        ctx.lineTo(px - 6, playerCenterY + 12);
+        ctx.moveTo(px + 10, beastY);
+        ctx.lineTo(px + 6, playerCenterY + 12);
         ctx.strokeStyle = mTier >= 7 ? '#fde047' : '#fef08a';
         ctx.lineWidth = 1.5;
         ctx.stroke();
-
         ctx.restore();
+
         ctx.restore();
       }
 
@@ -2995,12 +3650,18 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
       // 2. Dynamic Point Lights (Additive Blending)
       ctx.globalCompositeOperation = 'screen';
       
-      const drawPointLight = (lx, ly, lRadius, lColor) => {
-        // Boost light radius and intensity at night or in caves
-        const boostedRadius = lRadius * (1 + nightI * 0.2); 
+      const drawPointLight = (lx: number, ly: number, lRadius: number, lColor: string) => {
+        // Subtle ambient light glow pass - capped to soft low opacity so it never blinds the view or covers entities
+        const boostedRadius = Math.min(lRadius, 180) * (1 + nightI * 0.15); 
         const lGrad = ctx.createRadialGradient(lx, ly, 0, lx, ly, boostedRadius);
-        lGrad.addColorStop(0, lColor);
-        lGrad.addColorStop(0.3, lColor.replace(/[0-9.]+\)$/, (m) => (parseFloat(m) * 0.8) + ')')); // Intense core
+        // Replace opacity in rgba string with max 0.18 for ultra-clean soft lighting
+        const softColor = lColor.replace(/rgba\(([^,]+),([^,]+),([^,]+),([^)]+)\)/, (_, r, g, b, a) => {
+          const origA = parseFloat(a);
+          const softA = Math.min(0.18, origA * 0.3);
+          return `rgba(${r},${g},${b},${softA})`;
+        });
+        lGrad.addColorStop(0, softColor);
+        lGrad.addColorStop(0.6, softColor.replace(/[0-9.]+\)$/, (m) => (parseFloat(m) * 0.4) + ')'));
         lGrad.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = lGrad;
         ctx.beginPath();
@@ -3009,33 +3670,33 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
       };
 
       // - Player Core Light (Torch / Class Aura)
-      const pPulse = Math.sin(now * 0.005) * 15;
+      const pPulse = Math.sin(now * 0.005) * 10;
       const classLightColor = engine.character.profession === 'warrior'
-        ? 'rgba(249, 115, 22, 0.15)'
+        ? 'rgba(249, 115, 22, 0.12)'
         : engine.character.profession === 'mage'
-        ? 'rgba(168, 85, 247, 0.18)'
-        : 'rgba(52, 211, 153, 0.16)';
-      drawPointLight(px, playerCenterY - 10, 160 + pPulse * 0.5, classLightColor);
+        ? 'rgba(168, 85, 247, 0.14)'
+        : 'rgba(52, 211, 153, 0.12)';
+      drawPointLight(px, playerCenterY - 10, 120 + pPulse * 0.5, classLightColor);
 
       // - Mount Aura Light
       if (isMounted) {
-         drawPointLight(px, py, 250 + pPulse, 'rgba(139, 92, 246, 0.2)'); 
+         drawPointLight(px, py, 140 + pPulse, 'rgba(139, 92, 246, 0.12)'); 
       }
 
       // - Map Portals Light
       map.portals?.forEach(portal => {
         const { sx: tx, sy: ty } = toScreen(portal.x, portal.y);
-        drawPointLight(tx, ty - 20, 180 + Math.sin(now * 0.003 + portal.x) * 20, 'rgba(59, 130, 246, 0.45)');
+        drawPointLight(tx, ty - 20, 140 + Math.sin(now * 0.003 + portal.x) * 15, 'rgba(59, 130, 246, 0.25)');
       });
 
-            // - Interactive / Emissive Obstacles (Crystals & Torches)
+      // - Interactive / Emissive Obstacles (Crystals & Torches)
       map.obstacles?.forEach(obs => {
         if (obs.type === 'crystal') {
           const { sx: tx, sy: ty } = toScreen(obs.x + (obs.width || 1)/2 - 0.5, obs.y + (obs.height || 1)/2 - 0.5);
-          drawPointLight(tx, ty - 30, 220 + Math.sin(now * 0.002) * 30, 'rgba(236, 72, 153, 0.4)');
+          drawPointLight(tx, ty - 30, 150 + Math.sin(now * 0.002) * 20, 'rgba(236, 72, 153, 0.25)');
         } else if (obs.type === 'torch') {
           const { sx: tx, sy: ty } = toScreen(obs.x, obs.y);
-          drawPointLight(tx, ty - 10, 180 + Math.sin(now * 0.01 + obs.x) * 15, 'rgba(249, 115, 22, 0.55)');
+          drawPointLight(tx, ty - 10, 130 + Math.sin(now * 0.01 + obs.x) * 10, 'rgba(249, 115, 22, 0.3)');
         }
       });
 
@@ -3043,41 +3704,44 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
       engine.monsters?.forEach(m => {
         if (m.hp > 0 && m.isBoss) {
           const { sx: mx, sy: my } = toScreen(m.x, m.y);
-          drawPointLight(mx, my - 20, 280 + Math.sin(now * 0.004 + m.x) * 20, 'rgba(239, 68, 68, 0.35)');
+          drawPointLight(mx, my - 20, 160 + Math.sin(now * 0.004 + m.x) * 15, 'rgba(239, 68, 68, 0.22)');
         }
       });
 
-      // - Combat VFX Dynamic Light Sources
+      // - Combat VFX Dynamic Light Sources (Crisp & Subtle)
       engine.particles?.forEach(p => {
         if (p.vfxKind) {
           const { sx: pxL, sy: pyL } = toScreen(p.x, p.y);
           if (p.vfxKind === 'fire_sword') {
-            drawPointLight(pxL, pyL, 340, 'rgba(249, 115, 22, 0.8)');
+            drawPointLight(pxL, pyL, 160, 'rgba(249, 115, 22, 0.2)');
           } else if (p.vfxKind === 'sky_slash') {
-            const flash = (now % 100 < 50) ? 0.95 : 0.65;
-            drawPointLight(pxL, pyL, 480, `rgba(239, 68, 68, ${flash})`);
-            drawPointLight(pxL, pyL, 240, `rgba(254, 240, 138, ${flash})`);
+            drawPointLight(pxL, pyL, 200, 'rgba(239, 68, 68, 0.22)');
           } else if (p.vfxKind === 'sun_chaser') {
-            drawPointLight(pxL, pyL, 420, 'rgba(251, 191, 36, 0.85)');
+            drawPointLight(pxL, pyL, 180, 'rgba(251, 191, 36, 0.2)');
           } else if (p.vfxKind === 'savage_charge') {
-            drawPointLight(pxL, pyL, 280, 'rgba(217, 119, 6, 0.65)');
+            drawPointLight(pxL, pyL, 150, 'rgba(217, 119, 6, 0.18)');
           } else if (p.vfxKind === 'aegis_shield') {
-            drawPointLight(pxL, pyL, 260, 'rgba(250, 204, 21, 0.65)');
+            drawPointLight(pxL, pyL, 140, 'rgba(250, 204, 21, 0.18)');
           } else if (p.vfxKind === 'power_slash') {
-            drawPointLight(pxL, pyL, 220, 'rgba(234, 179, 8, 0.6)');
+            drawPointLight(pxL, pyL, 130, 'rgba(234, 179, 8, 0.16)');
+          } else if (p.vfxKind === 'elemental_fire') {
+            drawPointLight(pxL, pyL, 160, 'rgba(249, 115, 22, 0.2)');
+          } else if (p.vfxKind === 'elemental_ice') {
+            drawPointLight(pxL, pyL, 150, 'rgba(56, 189, 248, 0.2)');
+          } else if (p.vfxKind === 'elemental_thunder') {
+            drawPointLight(pxL, pyL, 170, 'rgba(168, 85, 247, 0.2)');
           } else if (p.vfxKind === 'fireball' || p.vfxKind === 'meteor') {
-            drawPointLight(pxL, pyL, 250, 'rgba(249, 115, 22, 0.55)');
+            drawPointLight(pxL, pyL, 140, 'rgba(249, 115, 22, 0.18)');
           } else if (p.vfxKind === 'heal' || p.vfxKind === 'heal_beam' || p.vfxKind === 'poison') {
-            drawPointLight(pxL, pyL, 200, 'rgba(52, 211, 153, 0.5)');
+            drawPointLight(pxL, pyL, 120, 'rgba(52, 211, 153, 0.16)');
           } else if (p.vfxKind === 'thunder') {
-            const flash = (now % 120 < 60) ? 0.7 : 0.2;
-            drawPointLight(pxL, pyL, 400, `rgba(167, 139, 250, ${flash})`);
+            drawPointLight(pxL, pyL, 160, 'rgba(167, 139, 250, 0.2)');
           } else if (p.vfxKind === 'slash' || p.vfxKind === 'crescent' || p.vfxKind === 'claw') {
-            drawPointLight(pxL, pyL, 160, 'rgba(250, 204, 21, 0.4)');
+            drawPointLight(pxL, pyL, 110, 'rgba(250, 204, 21, 0.14)');
           } else if (p.vfxKind === 'ice' || p.vfxKind === 'ice_storm' || p.vfxKind === 'shield' || p.vfxKind === 'talisman') {
-            drawPointLight(pxL, pyL, 220, 'rgba(125, 211, 252, 0.5)');
+            drawPointLight(pxL, pyL, 130, 'rgba(125, 211, 252, 0.16)');
           } else if (p.vfxKind === 'boss_smash') {
-            drawPointLight(pxL, pyL, 350, 'rgba(239, 68, 68, 0.6)');
+            drawPointLight(pxL, pyL, 170, 'rgba(239, 68, 68, 0.22)');
           }
         }
       });
@@ -3093,7 +3757,23 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         drawPointLight(lx, ly - 10, 120 + lPulse, c);
       });
 
-      // 3. Directional/Specular Global Illumination (PBR Rim Light)
+      // 3. Directional/Specular Global Illumination & Dynamic Ambient Mood Lighting
+      
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      
+      let ambientColor = 'rgba(255, 255, 255, 1)'; // Default neutral
+      if (map.theme === 'snake_valley') ambientColor = 'rgba(163, 230, 53, 0.5)'; // sickly green
+      else if (map.theme === 'stone_tomb') ambientColor = 'rgba(71, 85, 105, 0.7)'; // gloomy grey
+      else if (map.theme === 'zuma_temple') ambientColor = 'rgba(49, 46, 129, 0.6)'; // deep mystical purple
+      else if (currentWeather === 'rain') ambientColor = 'rgba(148, 163, 184, 0.8)'; // overcast
+      else if (currentWeather === 'sandstorm') ambientColor = 'rgba(253, 230, 138, 0.8)'; // sandy tint
+      else if (currentWeather === 'snow') ambientColor = 'rgba(224, 242, 254, 0.9)'; // cold tint
+      
+      ctx.fillStyle = ambientColor;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+
       const dirLight = ctx.createLinearGradient(0, 0, width, height);
       dirLight.addColorStop(0, 'rgba(255, 255, 255, 0.12)'); // Top-left soft sun
       dirLight.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
@@ -3927,6 +4607,181 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
 
               break;
             }
+
+            case 'elemental_fire': {
+              // 🔥 FIRE ELEMENTAL DAMAGE EFFECT (烈焰元素爆裂)
+              ctx.translate(baseSx, baseSy - 10);
+
+              // Thermal Expanding Shock Ring
+              const fireR = Math.max(0, 15 + progress * 35);
+              ctx.beginPath();
+              ctx.ellipse(0, 0, fireR, fireR * 0.45, 0, 0, Math.PI * 2);
+              ctx.lineWidth = Math.max(1, 5 * (1 - progress));
+              ctx.strokeStyle = 'rgba(249, 115, 22, 0.9)';
+              ctx.shadowColor = '#ea580c';
+              ctx.shadowBlur = 20;
+              ctx.stroke();
+
+              // Erupting Flame Embers & Magma Sparks
+              for (let i = 0; i < 10; i++) {
+                const fAng = (i * Math.PI * 2) / 10 + progress * 0.8;
+                const fDist = 8 + progress * 38;
+                const fx = Math.cos(fAng) * fDist;
+                const fy = Math.sin(fAng) * fDist * 0.5 - (progress * 22);
+
+                ctx.fillStyle = i % 3 === 0 ? '#ffffff' : i % 2 === 0 ? '#fef08a' : '#f97316';
+                ctx.shadowColor = '#dc2626';
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                ctx.arc(fx, fy, Math.max(0, (1 - progress) * 4 + 1), 0, Math.PI * 2);
+                ctx.fill();
+              }
+
+              // Rising Smoke Motes
+              for (let i = 0; i < 4; i++) {
+                const smProgress = (progress + i * 0.2) % 1;
+                const smX = Math.sin(i * 3 + now * 0.006) * 14;
+                const smY = -smProgress * 32;
+                ctx.fillStyle = `rgba(185, 28, 28, ${0.4 * (1 - smProgress)})`;
+                ctx.beginPath();
+                ctx.arc(smX, smY, 3 + smProgress * 4, 0, Math.PI * 2);
+                ctx.fill();
+              }
+
+              // Blazing Core Flash
+              ctx.beginPath();
+              ctx.arc(0, 0, Math.max(0, (1 - progress) * 14), 0, Math.PI * 2);
+              ctx.fillStyle = '#fffbeb';
+              ctx.shadowColor = '#f59e0b';
+              ctx.shadowBlur = 24;
+              ctx.fill();
+              break;
+            }
+
+            case 'elemental_ice': {
+              // ❄️ ICE ELEMENTAL DAMAGE EFFECT (冰霜凝晶爆裂)
+              ctx.translate(baseSx, baseSy - 10);
+
+              // Freezing Frost Ground Ring
+              const iceR = Math.max(0, 18 + progress * 32);
+              ctx.save();
+              ctx.beginPath();
+              ctx.ellipse(0, 0, iceR, iceR * 0.5, 0, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(56, 189, 248, ${0.25 * (1 - progress)})`;
+              ctx.shadowColor = '#0284c7';
+              ctx.shadowBlur = 20;
+              ctx.fill();
+
+              ctx.strokeStyle = 'rgba(224, 242, 254, 0.85)';
+              ctx.lineWidth = 2 * (1 - progress);
+              ctx.setLineDash([5, 3]);
+              ctx.stroke();
+              ctx.restore();
+
+              // Rotating Hexagonal Frost Crystal Flakes
+              for (let i = 0; i < 6; i++) {
+                const rotAng = (i * Math.PI * 2) / 6 + now * 0.006;
+                const dist = 10 + progress * 36;
+                const ix = Math.cos(rotAng) * dist;
+                const iy = Math.sin(rotAng) * dist * 0.5 - (progress * 16);
+
+                ctx.save();
+                ctx.translate(ix, iy);
+                ctx.rotate(rotAng * 2);
+
+                ctx.strokeStyle = i % 2 === 0 ? '#ffffff' : '#38bdf8';
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 10;
+                ctx.lineWidth = 1.5;
+                for (let branch = 0; branch < 3; branch++) {
+                  ctx.beginPath();
+                  ctx.moveTo(-5, 0);
+                  ctx.lineTo(5, 0);
+                  ctx.stroke();
+                  ctx.rotate(Math.PI / 3);
+                }
+                ctx.restore();
+              }
+
+              // Cold Shimmering Diamond Glints
+              for (let i = 0; i < 5; i++) {
+                const glProgress = (progress + i * 0.2) % 1;
+                const gx = Math.cos(i * 2 + now * 0.005) * 18;
+                const gy = -glProgress * 30;
+                ctx.fillStyle = '#e0f2fe';
+                ctx.shadowColor = '#0284c7';
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                ctx.arc(gx, gy, (1 - glProgress) * 3 + 0.8, 0, Math.PI * 2);
+                ctx.fill();
+              }
+
+              // Specular Ice Flash Core
+              ctx.beginPath();
+              ctx.arc(0, 0, Math.max(0, (1 - progress) * 12), 0, Math.PI * 2);
+              ctx.fillStyle = '#f0f9ff';
+              ctx.shadowColor = '#38bdf8';
+              ctx.shadowBlur = 22;
+              ctx.fill();
+              break;
+            }
+
+            case 'elemental_thunder': {
+              // ⚡ LIGHTNING ELEMENTAL DAMAGE EFFECT (紫电雷霆撕裂)
+              ctx.translate(baseSx, baseSy - 10);
+
+              // Branching Plasma Electric Arcs
+              ctx.shadowColor = '#c084fc';
+              ctx.shadowBlur = 22;
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 2.5 * (1 - progress * 0.5);
+
+              for (let a = 0; a < 4; a++) {
+                const arcAng = (a * Math.PI * 0.5) + (Math.sin(now * 0.05 + a) * 0.3);
+                const maxLen = 22 + progress * 32;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+
+                let currR = 0;
+                while (currR < maxLen) {
+                  currR += 8;
+                  const jitterX = Math.cos(arcAng) * currR + (Math.sin(currR * 3 + now * 0.04) * 6);
+                  const jitterY = Math.sin(arcAng) * currR * 0.5 + (Math.cos(currR * 3 + now * 0.04) * 4);
+                  ctx.lineTo(jitterX, jitterY);
+                }
+                ctx.stroke();
+              }
+
+              // High-Voltage Electric Spark Bursts
+              for (let i = 0; i < 8; i++) {
+                const sAng = (i * Math.PI * 2) / 8 + (Math.random() - 0.5) * 0.4;
+                const sDist = 12 + progress * 40;
+                const sxPos = Math.cos(sAng) * sDist;
+                const syPos = Math.sin(sAng) * sDist * 0.5 - (progress * 10);
+
+                ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#c084fc';
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 14;
+                ctx.fillRect(sxPos - 2, syPos - 2, 4, 4);
+              }
+
+              // Electric Ionization Shock Ring
+              const shockR = Math.max(0, 12 + progress * 38);
+              ctx.beginPath();
+              ctx.ellipse(0, 0, shockR, shockR * 0.5, 0, 0, Math.PI * 2);
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = 'rgba(192, 132, 252, 0.85)';
+              ctx.stroke();
+
+              // Blinding Core Flash
+              ctx.beginPath();
+              ctx.arc(0, 0, Math.max(0, (1 - progress) * 15), 0, Math.PI * 2);
+              ctx.fillStyle = '#ffffff';
+              ctx.shadowColor = '#a855f7';
+              ctx.shadowBlur = 28;
+              ctx.fill();
+              break;
+            }
           }
 
           ctx.restore();
@@ -3947,7 +4802,39 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
 
         const category = p.combatCategory || 'info';
 
-        if (category === 'crit') {
+        if (category === 'player_hurt') {
+          // --- PLAYER HURT (角色受击伤害) ---
+          let scale = 1;
+          if (progress < 0.2) {
+            scale = 1 + Math.sin((progress / 0.2) * Math.PI) * 0.45;
+          } else {
+            scale = 1.05;
+          }
+
+          ctx.translate(sx, sy);
+          ctx.scale(scale, scale);
+
+          // Deep Red Glow Aura
+          ctx.shadowColor = '#e11d48';
+          ctx.shadowBlur = 12;
+
+          // Black/Dark Crimson Thick Outer Stroke for Maximum Contrast
+          ctx.font = 'black 20px "Plus Jakarta Sans", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.strokeStyle = '#270008';
+          ctx.lineWidth = 4;
+          ctx.strokeText(p.text || '', 0, 0);
+
+          // Bright Crimson / Rose Fill
+          const hurtGrad = ctx.createLinearGradient(0, -10, 0, 10);
+          hurtGrad.addColorStop(0, '#ffffff');
+          hurtGrad.addColorStop(0.3, '#fda4af');
+          hurtGrad.addColorStop(1, '#e11d48');
+          ctx.fillStyle = hurtGrad;
+          ctx.fillText(p.text || '', 0, 0);
+
+        } else if (category === 'crit') {
           // --- CRITICAL HIT (暴击伤害) ---
           // Pop animation curve: grows quickly to 1.55x scale in first 20% of duration, then settles to 1.1x
           let scale = 1;
@@ -4630,18 +5517,18 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
-    const width = canvas.width;
-    const height = canvas.height;
-    const screenCenterX = width / 2;
-    const screenCenterY = height / 2;
+    const cssWidth = canvas.parentElement?.clientWidth || 800;
+    const cssHeight = canvas.parentElement?.clientHeight || 600;
+    const screenCenterX = cssWidth / 2;
+    const screenCenterY = cssHeight / 2;
 
     const camX = cameraPosRef.current ? cameraPosRef.current.x : engine.character.x;
     const camY = cameraPosRef.current ? cameraPosRef.current.y : engine.character.y;
     const tileWidth = 60;
     const tileHeight = 30;
 
-    const camIsoX = (camX - camY) * (tileWidth / 2);
-    const camIsoY = (camX + camY) * (tileHeight / 2);
+    const camIsoX = Math.round((camX - camY) * (tileWidth / 2));
+    const camIsoY = Math.round((camX + camY) * (tileHeight / 2));
 
     // Check if clicked a monster
     for (const m of engine.monsters) {

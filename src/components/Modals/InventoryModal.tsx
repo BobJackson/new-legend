@@ -18,6 +18,14 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({ engine, onClose,
     if (item.slot) {
       onEquipItem(item, index);
       setSelectedItem(null);
+    } else if (item.id === 'pill_instant_levelup') {
+      engine.useInstantLevelUpPill();
+      if ((item.count || 1) > 1) {
+        item.count! -= 1;
+      } else {
+        engine.character.inventory[index] = null;
+      }
+      setSelectedItem(null);
     } else if (item.id === 'material_capture_rope') {
       const success = engine.captureTargetMonster();
       if (success) {
@@ -75,6 +83,11 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({ engine, onClose,
     setSelectedItem(null);
   };
 
+  const handleRecycleSpecialRings = () => {
+    engine.recycleSpecialRings();
+    setSelectedItem(null);
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-2xl bg-slate-900 border-2 border-amber-800 rounded-2xl p-6 relative shadow-2xl text-amber-100 max-h-[90vh] overflow-y-auto">
@@ -100,19 +113,27 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({ engine, onClose,
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleOrganize}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:brightness-110 text-white font-bold text-xs shadow-md border border-blue-400/40 active:scale-95 transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:brightness-110 text-white font-bold text-xs shadow-md border border-blue-400/40 active:scale-95 transition-all"
             >
-              <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" /> 一键整理
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" /> 一键整理
+            </button>
+
+            <button
+              onClick={handleRecycleSpecialRings}
+              title="回收背包内所有麻痹/护身/复活戒指，换取海量元宝与金币"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600 hover:brightness-110 text-white font-black text-xs shadow-md border border-purple-300/50 active:scale-95 transition-all"
+            >
+              <span>💍 一键回收特戒</span>
             </button>
 
             <button
               onClick={handleOneKeyRecycle}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:brightness-110 text-white font-bold text-xs shadow-md border border-amber-400/40 active:scale-95 transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:brightness-110 text-white font-bold text-xs shadow-md border border-amber-400/40 active:scale-95 transition-all"
             >
-              <RefreshCw className="w-4 h-4" /> 一键回收装备
+              <RefreshCw className="w-3.5 h-3.5" /> 一键回收装备
             </button>
           </div>
         </div>

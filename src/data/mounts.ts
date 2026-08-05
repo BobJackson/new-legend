@@ -194,8 +194,8 @@ export const MOUNT_TIERS: Record<number, MountTierConfig> = {
     tier: 10,
     name: '十阶 · 混沌鸿蒙圣兽',
     subtitle: '鸿蒙初开 主宰诸天',
-    icon: '👑',
-    description: '传说中超越凡尘法则的混沌至高神兽，光环流转，横行三界无出其右！',
+    icon: '🌌',
+    description: '超越凡尘天道法则的混沌鸿蒙至高神兽，展舒星海苍穹巨翼，踏九幽游九天，掌控无上鸿蒙紫气与混沌天雷！',
     maxLevel: 10,
     expPerLevel: 1800,
     pillExp: 10,
@@ -206,7 +206,7 @@ export const MOUNT_TIERS: Record<number, MountTierConfig> = {
     hpBonus: 35000,
     defBonus: 1200,
     critChanceBonus: 0.25,
-    themeColor: 'from-amber-300 via-yellow-400 to-emerald-400',
-    auraColor: 'rgba(251, 191, 36, 1)'
+    themeColor: 'from-fuchsia-500 via-purple-600 to-amber-400',
+    auraColor: 'rgba(217, 70, 239, 1)'
   }
 };

@@ -10,6 +10,7 @@ interface ShopModalProps {
 
 export const ShopModal: React.FC<ShopModalProps> = ({ engine, onClose }) => {
   const shopGoods = [
+    { item: ITEM_DATABASE['pill_instant_levelup'], priceIngot: 10, count: 1, label: '【一键升级】直升经验丹 x1' },
     { item: ITEM_DATABASE['pill_mount_advance'], priceIngot: 20, count: 10, label: '【坐骑神丹】进阶丹 x10' },
     { item: ITEM_DATABASE['potion_sun_water'], priceIngot: 10, count: 10, label: '太阳水 x10' },
     { item: ITEM_DATABASE['blessing_oil'], priceIngot: 20, count: 3, label: '祝福油 x3' },
@@ -18,12 +19,25 @@ export const ShopModal: React.FC<ShopModalProps> = ({ engine, onClose }) => {
     { item: ITEM_DATABASE['material_exp_fruit'], priceIngot: 20, count: 10, label: '【宠物】经验果 x10' },
     { item: ITEM_DATABASE['ring_paralysis'], priceIngot: 888, count: 1, label: '【神装】麻痹戒指' },
     { item: ITEM_DATABASE['ring_bodyguard'], priceIngot: 888, count: 1, label: '【神装】护身戒指' },
-    { item: ITEM_DATABASE['ring_resurrection'], priceIngot: 999, count: 1, label: '【神装】复活戒指' }
+    { item: ITEM_DATABASE['ring_resurrection'], priceIngot: 999, count: 1, label: '【神装】复活戒指' },
+    { item: ITEM_DATABASE['weapon_genesis'], priceIngot: 50000, count: 1, label: '【终极神装】创世神剑' },
+    { item: ITEM_DATABASE['armor_genesis'], priceIngot: 50000, count: 1, label: '【终极神装】创世神铠' },
+    { item: ITEM_DATABASE['helmet_genesis'], priceIngot: 20000, count: 1, label: '【终极神装】创世神盔' },
+    { item: ITEM_DATABASE['necklace_genesis'], priceIngot: 20000, count: 1, label: '【终极神装】创世神链' },
+    { item: ITEM_DATABASE['bracelet_genesis'], priceIngot: 20000, count: 1, label: '【终极神装】创世神镯' },
+    { item: ITEM_DATABASE['ring_genesis'], priceIngot: 20000, count: 1, label: '【终极神装】创世神戒' },
+    { item: ITEM_DATABASE['boot_genesis'], priceIngot: 20000, count: 1, label: '【终极神装】创世神靴' },
+    { item: ITEM_DATABASE['belt_genesis'], priceIngot: 20000, count: 1, label: '【终极神装】创世神带' }
   ];
 
   const handleBuy = (goods: typeof shopGoods[0]) => {
     if (engine.character.ingot < goods.priceIngot) {
       engine.addParticle(engine.character.x, engine.character.y, 'text_info', '元宝不足！');
+      return;
+    }
+
+    if (goods.item.id === 'pill_instant_levelup') {
+      engine.buyAndUseLevelUpPill();
       return;
     }
 
@@ -61,8 +75,19 @@ export const ShopModal: React.FC<ShopModalProps> = ({ engine, onClose }) => {
             <Store className="w-6 h-6 text-amber-400" />
             <h2 className="text-xl font-bold text-amber-300">元宝云端商城</h2>
           </div>
-          <div className="text-xs bg-slate-950 border border-amber-900/60 px-3 py-1.5 rounded-lg font-bold text-amber-300">
-            元宝余额: {engine.character.ingot.toLocaleString()}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                engine.character.ingot += 10000000;
+                engine.notify();
+              }}
+              className="text-xs bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg shadow font-bold"
+            >
+              【系统奖励】10,000,000 元宝
+            </button>
+            <div className="text-xs bg-slate-950 border border-amber-900/60 px-3 py-1.5 rounded-lg font-bold text-amber-300">
+              元宝余额: {engine.character.ingot.toLocaleString()}
+            </div>
           </div>
         </div>
 

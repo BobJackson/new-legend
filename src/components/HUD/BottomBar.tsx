@@ -17,15 +17,26 @@ export const BottomBar: React.FC<BottomBarProps> = ({ engine, onOpenModal, onCas
 
   return (
     <div className="w-full bg-slate-950/95 border-t-2 border-amber-900/60 p-2 text-amber-100 flex flex-col gap-2 backdrop-blur-md select-none z-20">
-      {/* EXP Progress Bar */}
-      <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-amber-950 relative">
-        <div
-          className="bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-400 h-full transition-all duration-300"
-          style={{ width: `${Math.min(100, expRatio)}%` }}
-        />
-        <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-amber-100 drop-shadow">
-          EXP: {engine.character.exp.toLocaleString()} / {engine.character.maxExp.toLocaleString()} ({expRatio.toFixed(1)}%)
-        </span>
+      {/* EXP Progress Bar & Quick Levelup Pill */}
+      <div className="w-full flex items-center gap-2">
+        <div className="flex-1 bg-slate-900 h-2.5 rounded-full overflow-hidden border border-amber-950 relative shadow-inner">
+          <div
+            className="bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-400 h-full transition-all duration-300"
+            style={{ width: `${Math.min(100, expRatio)}%` }}
+          />
+          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-extrabold text-amber-100 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+            EXP: {engine.character.exp.toLocaleString()} / {engine.character.maxExp.toLocaleString()} ({expRatio.toFixed(1)}%)
+          </span>
+        </div>
+
+        <button
+          onClick={() => engine.buyAndUseLevelUpPill()}
+          title="消耗 10 元宝购买直升经验丹，瞬间满经验升级！"
+          className="px-2 py-0.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-orange-500 hover:brightness-125 text-slate-950 text-[10px] font-black rounded-md border border-yellow-200 shadow-[0_0_10px_rgba(245,158,11,0.5)] flex items-center gap-1 active:scale-95 transition-all whitespace-nowrap"
+        >
+          <span>⚡ 一键升级</span>
+          <span className="bg-slate-950 text-amber-300 px-1 py-0.2 rounded text-[9px] border border-amber-500/50">10元宝</span>
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">

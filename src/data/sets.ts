@@ -40,5 +40,17 @@ export const SET_BONUSES: Record<string, SetBonus> = {
     taoAtkBonus: 1000,
     hpBonus: 50000,
     specialEffectId: 'aura_ancient_dragon'
+  },
+  'genesis_set': {
+    setId: 'genesis_set',
+    setName: '创世神套装',
+    requiredPieces: 8,
+    physAtkBonus: 100000,
+    magAtkBonus: 100000,
+    taoAtkBonus: 100000,
+    hpBonus: 50000000,
+    physDefBonus: 20000,
+    magDefBonus: 20000,
+    specialEffectId: 'aura_genesis'
   }
 };
