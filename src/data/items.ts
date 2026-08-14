@@ -463,9 +463,9 @@ export const ITEM_DATABASE: Record<string, Item> = {
     type: 'potion',
     rarity: 'mythic',
     reqLevel: 1,
-    description: '【神级妙丹】服用后瞬间爆发滔天海量经验，直接提升1个角色等级！快速体验高级主线剧情与传奇地图！',
-    priceGold: 10000,
-    priceIngot: 10,
+    description: '【神级妙丹】服用后瞬间突破当前等级桎梏，直接提升1个角色等级！商城阶梯售价（根据当前等级动态调整）。',
+    priceGold: 20000,
+    priceIngot: 50,
     recycleGold: 2000,
     recycleIngot: 5,
     recycleExp: 0

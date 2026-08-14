@@ -2,7 +2,7 @@ import React from 'react';
 import { GameEngine } from '../../engine/GameEngine';
 import { MAP_DATABASE } from '../../data/maps';
 import { WEATHER_DATABASE } from '../../data/weather';
-import { Settings, Play, Pause, Coins, Gem, ShieldAlert, Award, Bot } from 'lucide-react';
+import { Settings, Play, Pause, Coins, Gem, ShieldAlert, Award, Bot, Mail, ShieldCheck } from 'lucide-react';
 import { LevelBadgeTag } from './LevelBadgeTag';
 
 interface TopBarProps {
@@ -13,6 +13,7 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ engine, onOpenModal, onToggleAutoBattle }) => {
   const map = MAP_DATABASE[engine.currentMapId] || MAP_DATABASE['bichi_city'];
+  const unreadMails = engine.getUnreadMailsCount();
 
   return (
     <div className="w-full bg-slate-950/90 border-b border-amber-900/40 px-3 py-2 text-amber-100 flex flex-wrap items-center justify-between gap-2 backdrop-blur-md select-none z-20">
@@ -43,6 +44,11 @@ export const TopBar: React.FC<TopBarProps> = ({ engine, onOpenModal, onToggleAut
               <Award className="w-3.5 h-3.5 text-amber-500" />
               战力: <span className="text-amber-300 font-extrabold">{engine.stats.battlePower.toLocaleString()}</span>
             </span>
+            {engine.character.uid && (
+              <span className="text-[10px] text-slate-400 bg-slate-900 px-1.5 py-0.2 rounded border border-slate-800">
+                {engine.character.uid}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -83,7 +89,7 @@ export const TopBar: React.FC<TopBarProps> = ({ engine, onOpenModal, onToggleAut
       </div>
 
       {/* Currency & Quick Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         <div className="hidden sm:flex items-center gap-3 text-xs bg-slate-900/90 px-3 py-1 rounded-lg border border-slate-800">
           <span className="text-amber-400 flex items-center gap-1 font-bold">
             <Coins className="w-3.5 h-3.5 text-amber-500" />
@@ -94,6 +100,31 @@ export const TopBar: React.FC<TopBarProps> = ({ engine, onOpenModal, onToggleAut
             {engine.character.ingot.toLocaleString()} 元宝
           </span>
         </div>
+
+        {/* Mail Button with Unread Badge */}
+        <button
+          onClick={() => onOpenModal('mail')}
+          className="relative px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-amber-600/70 hover:border-amber-400 rounded-lg text-amber-200 transition-all flex items-center gap-1 text-xs font-bold shadow-sm"
+          title="皇家信使 · 邮件中心"
+        >
+          <Mail className="w-4 h-4 text-amber-400" />
+          <span className="hidden md:inline">邮件</span>
+          {unreadMails > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-rose-600 text-white rounded-full text-[10px] font-black flex items-center justify-center px-1 shadow-[0_0_8px_#f43f5e] animate-pulse border border-slate-950">
+              {unreadMails}
+            </span>
+          )}
+        </button>
+
+        {/* GM Admin Console Button */}
+        <button
+          onClick={() => onOpenModal('gmAdmin')}
+          className="px-2.5 py-1.5 bg-gradient-to-r from-purple-950 to-indigo-950 hover:from-purple-900 hover:to-indigo-900 border border-purple-500/60 rounded-lg text-purple-200 transition-all flex items-center gap-1 text-xs font-bold shadow-sm"
+          title="GM运营后台系统 (发奖/日志/花名册)"
+        >
+          <ShieldCheck className="w-4 h-4 text-purple-300" />
+          <span className="hidden md:inline">GM后台</span>
+        </button>
 
         {/* Auto Battle Toggle */}
         <button

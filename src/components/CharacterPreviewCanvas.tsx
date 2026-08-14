@@ -151,61 +151,7 @@ export const CharacterPreviewCanvas: React.FC<CharacterPreviewCanvasProps> = ({
         ctx.fillText('☯️', yx, yy);
       }
 
-      // C. Wing System
-      const wingLvl = character.wingLevel || 0;
-      if (wingLvl > 0) {
-        const flap = Math.sin(now * 0.005) * 0.14;
-        const wingY = playerCenterY - 8;
-
-        ctx.save();
-        let wingPrimary = '#38bdf8';
-        let wingGlow = '#60a5fa';
-        if (wingLvl >= 7) {
-          wingPrimary = '#ef4444';
-          wingGlow = '#f59e0b';
-        } else if (wingLvl >= 4) {
-          wingPrimary = '#f59e0b';
-          wingGlow = '#fef08a';
-        }
-
-        // Left Wing
-        ctx.save();
-        ctx.translate(px - 10, wingY);
-        ctx.rotate(-0.35 + flap);
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(-28, -34, -46, -16);
-        ctx.quadraticCurveTo(-30, 0, 0, 10);
-        ctx.fillStyle = wingPrimary;
-        ctx.shadowColor = wingGlow;
-        ctx.shadowBlur = 14;
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.restore();
-
-        // Right Wing
-        ctx.save();
-        ctx.translate(px + 10, wingY);
-        ctx.rotate(0.35 - flap);
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(28, -34, 46, -16);
-        ctx.quadraticCurveTo(30, 0, 0, 10);
-        ctx.fillStyle = wingPrimary;
-        ctx.shadowColor = wingGlow;
-        ctx.shadowBlur = 14;
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.restore();
-
-        ctx.restore();
-      }
-
-      // D. Full Humanoid Character Avatar (统一画风与装备辨识度 + 动作帧切换)
+      // C. Full Humanoid Character Avatar (全新高精细东方热血传奇画风 + 神兵利器/神装/翅膀/动作帧切换)
       drawCharacterAvatar({
         ctx,
         px,
@@ -214,6 +160,7 @@ export const CharacterPreviewCanvas: React.FC<CharacterPreviewCanvasProps> = ({
         character,
         previewEquipment,
         now,
+        scale: 1.25,
         actionOverride: actionState === 'attack' ? (character.profession === 'warrior' ? 'attack' : 'cast') : actionState
       });
 

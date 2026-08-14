@@ -1,6 +1,6 @@
 import React from 'react';
 import { GameEngine } from '../../engine/GameEngine';
-import { User, ShoppingBag, Flame, Hammer, Skull, Users, Store, Zap, Heart, Award, Bot } from 'lucide-react';
+import { User, ShoppingBag, Flame, Hammer, Skull, Users, Store, Zap, Heart, Award, Bot, Mail } from 'lucide-react';
 
 interface BottomBarProps {
   engine: GameEngine;
@@ -15,10 +15,29 @@ export const BottomBar: React.FC<BottomBarProps> = ({ engine, onOpenModal, onCas
 
   const quickSkills = engine.character.skills;
 
+  // 格式化血量/魔法大数字，防止超出球体显示（如 1046646 -> 104.6万，93902 -> 9.39万）
+  const formatOrbNumber = (num: number): string => {
+    if (num === undefined || num === null || isNaN(num)) return '0';
+    if (num < 10000) return Math.floor(num).toLocaleString();
+    if (num < 1000000) {
+      const val = num / 10000;
+      return val >= 100 ? `${val.toFixed(1).replace(/\.0$/, '')}万` : `${val.toFixed(2).replace(/\.?0+$/, '')}万`;
+    }
+    if (num < 100000000) {
+      const val = num / 10000;
+      return val >= 1000 ? `${Math.floor(val)}万` : `${val.toFixed(1).replace(/\.0$/, '')}万`;
+    }
+    const val = num / 100000000;
+    return `${val.toFixed(2).replace(/\.?0+$/, '')}亿`;
+  };
+
+  const formattedHp = formatOrbNumber(engine.stats.hp);
+  const formattedMp = formatOrbNumber(engine.stats.mp);
+
   return (
     <div className="w-full bg-slate-950/95 border-t-2 border-amber-900/60 p-2 text-amber-100 flex flex-col gap-2 backdrop-blur-md select-none z-20">
-      {/* EXP Progress Bar & Quick Levelup Pill */}
-      <div className="w-full flex items-center gap-2">
+      {/* EXP Progress Bar */}
+      <div className="w-full flex items-center">
         <div className="flex-1 bg-slate-900 h-2.5 rounded-full overflow-hidden border border-amber-950 relative shadow-inner">
           <div
             className="bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-400 h-full transition-all duration-300"
@@ -28,40 +47,97 @@ export const BottomBar: React.FC<BottomBarProps> = ({ engine, onOpenModal, onCas
             EXP: {engine.character.exp.toLocaleString()} / {engine.character.maxExp.toLocaleString()} ({expRatio.toFixed(1)}%)
           </span>
         </div>
-
-        <button
-          onClick={() => engine.buyAndUseLevelUpPill()}
-          title="消耗 10 元宝购买直升经验丹，瞬间满经验升级！"
-          className="px-2 py-0.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-orange-500 hover:brightness-125 text-slate-950 text-[10px] font-black rounded-md border border-yellow-200 shadow-[0_0_10px_rgba(245,158,11,0.5)] flex items-center gap-1 active:scale-95 transition-all whitespace-nowrap"
-        >
-          <span>⚡ 一键升级</span>
-          <span className="bg-slate-950 text-amber-300 px-1 py-0.2 rounded text-[9px] border border-amber-500/50">10元宝</span>
-        </button>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         {/* HP / MP Orbs Gauge */}
-        <div className="flex items-center gap-3">
-          {/* HP Orb */}
-          <div className="relative w-12 h-12 rounded-full bg-slate-900 border-2 border-rose-900 overflow-hidden flex items-center justify-center shadow-[0_0_15px_rgba(225,29,72,0.3)]">
-            <div
-              className="absolute bottom-0 w-full bg-gradient-to-t from-rose-700 to-red-500 transition-all duration-300"
-              style={{ height: `${hpRatio}%` }}
-            />
-            <span className="relative z-10 text-[10px] font-black text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
-              {engine.stats.hp}
-            </span>
+        <div className="flex items-center gap-2.5">
+          {/* HP Orb (经典热血传奇红血球) */}
+          <div
+            onClick={() => {
+              engine.stats.hp = Math.min(engine.stats.maxHp, engine.stats.hp + 500);
+              engine.addParticle(engine.character.x, engine.character.y, 'heal_green', '恢复 +500HP');
+            }}
+            title={`生命值 (HP): ${engine.stats.hp.toLocaleString()} / ${engine.stats.maxHp.toLocaleString()} (${hpRatio.toFixed(1)}%)\n💡 点击可快速使用药水恢复`}
+            className={`relative w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-slate-950 border-2 border-rose-800/90 overflow-hidden flex flex-col items-center justify-center cursor-pointer group active:scale-95 transition-all shadow-[0_0_14px_rgba(225,29,72,0.35)] ${
+              hpRatio < 25 ? 'animate-pulse ring-2 ring-red-500 shadow-[0_0_20px_rgba(239,68,68,0.8)]' : 'ring-1 ring-amber-500/40 hover:ring-amber-400'
+            }`}
+          >
+            {/* Liquid Fill */}
+            <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none">
+              <div
+                className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-red-950 via-rose-600 to-red-500 transition-all duration-300 ease-out shadow-[inset_0_2px_4px_rgba(255,255,255,0.3)]"
+                style={{ height: `${Math.max(0, Math.min(100, hpRatio))}%` }}
+              >
+                {/* Surface wave highlight */}
+                {hpRatio > 2 && hpRatio < 98 && (
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-white/40 shadow-[0_0_4px_#fff]" />
+                )}
+              </div>
+            </div>
+
+            {/* Glass Orb 3D Highlight Overlay */}
+            <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/25 via-transparent to-black/50 pointer-events-none ring-1 ring-inset ring-white/20" />
+
+            {/* Text Overlay */}
+            <div className="relative z-10 flex flex-col items-center justify-center leading-none text-center px-1 pointer-events-none">
+              <span className="text-[8px] font-black text-rose-200 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)] tracking-wider">
+                HP
+              </span>
+              <span
+                className={`font-black text-white drop-shadow-[0_1px_3px_rgba(0,0,0,1)] my-0.5 tracking-tight ${
+                  formattedHp.length > 5 ? 'text-[9.5px]' : formattedHp.length > 4 ? 'text-[10.5px]' : 'text-xs'
+                }`}
+              >
+                {formattedHp}
+              </span>
+              <span className="text-[7.5px] font-bold text-amber-200/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
+                {Math.round(hpRatio)}%
+              </span>
+            </div>
           </div>
 
-          {/* MP Orb */}
-          <div className="relative w-12 h-12 rounded-full bg-slate-900 border-2 border-blue-900 overflow-hidden flex items-center justify-center shadow-[0_0_15px_rgba(37,99,235,0.3)]">
-            <div
-              className="absolute bottom-0 w-full bg-gradient-to-t from-blue-700 to-sky-400 transition-all duration-300"
-              style={{ height: `${mpRatio}%` }}
-            />
-            <span className="relative z-10 text-[10px] font-black text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
-              {engine.stats.mp}
-            </span>
+          {/* MP Orb (经典热血传奇蓝魔法球) */}
+          <div
+            onClick={() => {
+              engine.stats.mp = Math.min(engine.stats.maxMp, engine.stats.mp + 300);
+              engine.addParticle(engine.character.x, engine.character.y, 'heal_green', '恢复 +300MP');
+            }}
+            title={`魔法值 (MP): ${engine.stats.mp.toLocaleString()} / ${engine.stats.maxMp.toLocaleString()} (${mpRatio.toFixed(1)}%)\n💡 点击可快速使用药水恢复`}
+            className="relative w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-slate-950 border-2 border-blue-800/90 overflow-hidden flex flex-col items-center justify-center cursor-pointer group active:scale-95 transition-all shadow-[0_0_14px_rgba(37,99,235,0.35)] ring-1 ring-amber-500/40 hover:ring-amber-400"
+          >
+            {/* Liquid Fill */}
+            <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none">
+              <div
+                className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-blue-950 via-blue-600 to-sky-400 transition-all duration-300 ease-out shadow-[inset_0_2px_4px_rgba(255,255,255,0.3)]"
+                style={{ height: `${Math.max(0, Math.min(100, mpRatio))}%` }}
+              >
+                {/* Surface wave highlight */}
+                {mpRatio > 2 && mpRatio < 98 && (
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-white/40 shadow-[0_0_4px_#fff]" />
+                )}
+              </div>
+            </div>
+
+            {/* Glass Orb 3D Highlight Overlay */}
+            <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/25 via-transparent to-black/50 pointer-events-none ring-1 ring-inset ring-white/20" />
+
+            {/* Text Overlay */}
+            <div className="relative z-10 flex flex-col items-center justify-center leading-none text-center px-1 pointer-events-none">
+              <span className="text-[8px] font-black text-sky-200 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)] tracking-wider">
+                MP
+              </span>
+              <span
+                className={`font-black text-white drop-shadow-[0_1px_3px_rgba(0,0,0,1)] my-0.5 tracking-tight ${
+                  formattedMp.length > 5 ? 'text-[9.5px]' : formattedMp.length > 4 ? 'text-[10.5px]' : 'text-xs'
+                }`}
+              >
+                {formattedMp}
+              </span>
+              <span className="text-[7.5px] font-bold text-sky-200/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
+                {Math.round(mpRatio)}%
+              </span>
+            </div>
           </div>
         </div>
 
@@ -216,6 +292,18 @@ export const BottomBar: React.FC<BottomBarProps> = ({ engine, onOpenModal, onCas
           >
             <Bot className="w-4 h-4 text-emerald-400" />
             <span>回收</span>
+          </button>
+
+          <button
+            onClick={() => onOpenModal('mail')}
+            className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-slate-900 border border-amber-900/40 hover:border-amber-500 hover:bg-slate-800 text-amber-200 transition-all text-[10px] relative"
+            title="邮件中心"
+          >
+            <Mail className="w-4 h-4 text-amber-400" />
+            <span>邮件</span>
+            {engine.getUnreadMailsCount() > 0 && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full animate-pulse shadow-[0_0_5px_#f43f5e]" />
+            )}
           </button>
 
           <button

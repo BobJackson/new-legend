@@ -3425,120 +3425,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         ctx.fillText('☯️', yx, yy);
       }
 
-                  // C. Equipped Wing System (神级翼展 - 纯白天使羽翼形态)
-      const wingLvl = engine.character.wingLevel || 0;
-      if (wingLvl > 0) {
-        const wingTier = Math.floor(wingLvl / 10);
-        // Angels flap slowly and elegantly
-        const flapSpeed = 0.002 + wingTier * 0.0002; 
-        const flap = Math.sin(now * flapSpeed) * (0.15 + wingTier * 0.01);
-        const wingY = playerCenterY - 12 - (wingTier * 0.5);
-
-        ctx.save();
-        
-        // Base color is always white/angelic, but aura/glow evolves
-        const tierGlows = [
-          '#e2e8f0', // Tier 0: Soft White
-          '#93c5fd', // Tier 1: Light Blue
-          '#6ee7b7', // Tier 2: Emerald
-          '#fca5a5', // Tier 3: Rose
-          '#d8b4fe', // Tier 4: Violet
-          '#fcd34d', // Tier 5: Radiant Gold
-          '#f9a8d4', // Tier 6: Pink
-          '#5eead4', // Tier 7: Cyan
-          '#ffffff', // Tier 8: Pure Holy White
-          '#fbbf24', // Tier 9+: Divine Amber
-        ];
-        
-        const glowColor = tierGlows[Math.min(wingTier, tierGlows.length - 1)];
-        
-        // Scale wing size based on tier
-        const scale = 0.12 + (wingTier * 0.01);
-
-        // Angel Wing Drawing Function (draws left wing)
-        const drawAngelWing = () => {
-           // More layers of feathers for higher tiers
-           const layers = 2 + Math.min(2, Math.floor(wingTier / 3));
-           
-           for (let i = 0; i < layers; i++) {
-              ctx.save();
-              ctx.scale(1 - (i * 0.2), 1 - (i * 0.2));
-              ctx.rotate(i * 0.15); // Inner layers rotate slightly downwards
-              
-              ctx.beginPath();
-              ctx.moveTo(0, 0);
-              // Top arch of the wing
-              ctx.bezierCurveTo(-15, -20, -35, -25, -45, -10);
-              
-              // Feathers scalloped edge
-              ctx.quadraticCurveTo(-38, -5, -42, 8);
-              ctx.quadraticCurveTo(-32, 2, -32, 16);
-              ctx.quadraticCurveTo(-22, 6, -20, 20);
-              ctx.quadraticCurveTo(-12, 10, -8, 18);
-              ctx.lineTo(0, 0);
-              
-              // Gradient for volumetric white feathers
-              const grad = ctx.createLinearGradient(0, 0, -45, 0);
-              grad.addColorStop(0, '#ffffff');
-              grad.addColorStop(1, '#f1f5f9');
-              ctx.fillStyle = grad;
-              
-              ctx.shadowColor = glowColor;
-              ctx.shadowBlur = 10 + (wingTier * 2);
-              ctx.fill();
-              
-              // Soft feather outlines
-              ctx.strokeStyle = 'rgba(203, 213, 225, 0.8)';
-              ctx.lineWidth = 1;
-              ctx.stroke();
-              
-              // Inner feather details
-              ctx.beginPath();
-              ctx.moveTo(-15, -10); ctx.lineTo(-32, -2);
-              ctx.moveTo(-10, -5); ctx.lineTo(-22, 6);
-              ctx.moveTo(-5, 0); ctx.lineTo(-12, 10);
-              ctx.strokeStyle = 'rgba(203, 213, 225, 0.4)';
-              ctx.stroke();
-              
-              ctx.restore();
-           }
-        };
-
-        // Left Wing
-        ctx.save();
-        ctx.translate(px - 5, wingY);
-        ctx.rotate(-0.2 + flap);
-        ctx.scale(scale, scale);
-        drawAngelWing();
-        ctx.restore();
-
-        // Right Wing
-        ctx.save();
-        ctx.translate(px + 5, wingY);
-        ctx.rotate(0.2 - flap);
-        ctx.scale(-scale, scale); // Flip horizontally for right wing
-        drawAngelWing();
-        ctx.restore();
-        
-        // Advanced Holy Aura Effect for higher tiers
-        if (wingTier >= 2) {
-          ctx.save();
-          ctx.translate(px, wingY + 10);
-          const auraPulse = Math.sin(now * 0.004) * (5 + wingTier);
-          ctx.shadowColor = glowColor;
-          ctx.shadowBlur = Math.max(0, 8 + wingTier * 2);
-          ctx.fillStyle = glowColor;
-          ctx.globalAlpha = Math.min(1, Math.max(0, 0.05 + (wingTier * 0.01)));
-          ctx.beginPath();
-          ctx.arc(0, 0, Math.max(0, 8 + auraPulse * 0.3), 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-
-        ctx.restore();
-      }
-
-      // D. Full Humanoid Character Body, Armor & Weapon Layer (使用全新的热血战术姿态、男女形象与装备渲染引擎 + 骑乘专属动作帧)
+      // C. Full Humanoid Character Body, Armor & Weapon Layer (全新高精细东方热血传奇画风 + 动态披风/神装/神翼/神兵/骑乘姿态)
       let lookAtTarget: { x: number; y: number } | undefined = undefined;
       if (engine.targetMonsterId) {
         const targetMonster = engine.monsters.find(m => m.id === engine.targetMonsterId && m.hp > 0);
@@ -3555,7 +3442,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ engine, onSelect
         playerCenterY,
         character: engine.character,
         now,
-        scale: 1.15, // Slightly larger to show facial and armor details clearly
+        scale: 1.15,
         isMoving: distToPlayer > 0.02,
         isMounted,
         lookAtTarget

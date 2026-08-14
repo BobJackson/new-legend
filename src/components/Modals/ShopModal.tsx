@@ -9,8 +9,16 @@ interface ShopModalProps {
 }
 
 export const ShopModal: React.FC<ShopModalProps> = ({ engine, onClose }) => {
+  const pillTierInfo = engine.getLevelUpPillPrice();
+
   const shopGoods = [
-    { item: ITEM_DATABASE['pill_instant_levelup'], priceIngot: 10, count: 1, label: '【一键升级】直升经验丹 x1' },
+    {
+      item: ITEM_DATABASE['pill_instant_levelup'],
+      priceIngot: pillTierInfo.price,
+      count: 1,
+      label: `【阶梯直升】直升经验丹 x1`,
+      tierSub: `当前LV.${engine.character.level} (${pillTierInfo.tierName} · ${pillTierInfo.reqLevelRange})`
+    },
     { item: ITEM_DATABASE['pill_mount_advance'], priceIngot: 20, count: 10, label: '【坐骑神丹】进阶丹 x10' },
     { item: ITEM_DATABASE['potion_sun_water'], priceIngot: 10, count: 10, label: '太阳水 x10' },
     { item: ITEM_DATABASE['blessing_oil'], priceIngot: 20, count: 3, label: '祝福油 x3' },
@@ -31,19 +39,16 @@ export const ShopModal: React.FC<ShopModalProps> = ({ engine, onClose }) => {
   ];
 
   const handleBuy = (goods: typeof shopGoods[0]) => {
-    if (engine.character.ingot < goods.priceIngot) {
-      engine.addParticle(engine.character.x, engine.character.y, 'text_info', '元宝不足！');
-      return;
-    }
+    const cost = goods.item.id === 'pill_instant_levelup' ? engine.getLevelUpPillPrice().price : goods.priceIngot;
 
-    if (goods.item.id === 'pill_instant_levelup') {
-      engine.buyAndUseLevelUpPill();
+    if (engine.character.ingot < cost) {
+      engine.addParticle(engine.character.x, engine.character.y, 'text_info', `元宝不足！需要 ${cost.toLocaleString()} 元宝！`);
       return;
     }
 
     if (goods.item.id === 'pill_mount_advance') {
       engine.initMount();
-      engine.character.ingot -= goods.priceIngot;
+      engine.character.ingot -= cost;
       engine.character.mount!.advancePillsCount += goods.count;
       engine.addParticle(engine.character.x, engine.character.y, 'text_gold', `【购买成功!】获得 ${goods.label}`);
       return;
@@ -55,8 +60,10 @@ export const ShopModal: React.FC<ShopModalProps> = ({ engine, onClose }) => {
     });
 
     if (success) {
-      engine.character.ingot -= goods.priceIngot;
+      engine.character.ingot -= cost;
       engine.addParticle(engine.character.x, engine.character.y, 'text_gold', `【购买成功!】获得 ${goods.label}`);
+    } else {
+      engine.addParticle(engine.character.x, engine.character.y, 'text_info', '背包已满，请先清理背包！');
     }
   };
 
@@ -91,24 +98,50 @@ export const ShopModal: React.FC<ShopModalProps> = ({ engine, onClose }) => {
           </div>
         </div>
 
+        {/* 直升经验丹 阶梯售价规则提示条 */}
+        <div className="mb-4 bg-amber-950/40 border border-amber-800/60 rounded-xl p-3 text-xs flex flex-col gap-1.5 shadow-inner">
+          <div className="flex items-center justify-between text-amber-300 font-bold">
+            <span className="flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-yellow-400" />
+              直升经验丹 · 阶梯售价说明（根据角色当前等级计算）
+            </span>
+            <span className="text-[11px] text-amber-200/80">
+              当前等级: <strong className="text-yellow-300">LV.{engine.character.level}</strong> (对应 {pillTierInfo.tierName}: <strong className="text-yellow-400">{pillTierInfo.price.toLocaleString()} 元宝</strong>)
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5 text-[10px] text-slate-300">
+            <span className={`px-2 py-0.5 rounded border ${engine.character.level <= 20 ? 'bg-amber-500/30 border-amber-400 text-yellow-200 font-bold' : 'bg-slate-900/80 border-slate-800 text-slate-400'}`}>LV.1-20: 50元宝</span>
+            <span className={`px-2 py-0.5 rounded border ${engine.character.level > 20 && engine.character.level <= 35 ? 'bg-amber-500/30 border-amber-400 text-yellow-200 font-bold' : 'bg-slate-900/80 border-slate-800 text-slate-400'}`}>LV.21-35: 150元宝</span>
+            <span className={`px-2 py-0.5 rounded border ${engine.character.level > 35 && engine.character.level <= 50 ? 'bg-amber-500/30 border-amber-400 text-yellow-200 font-bold' : 'bg-slate-900/80 border-slate-800 text-slate-400'}`}>LV.36-50: 500元宝</span>
+            <span className={`px-2 py-0.5 rounded border ${engine.character.level > 50 && engine.character.level <= 65 ? 'bg-amber-500/30 border-amber-400 text-yellow-200 font-bold' : 'bg-slate-900/80 border-slate-800 text-slate-400'}`}>LV.51-65: 1,500元宝</span>
+            <span className={`px-2 py-0.5 rounded border ${engine.character.level > 65 && engine.character.level <= 80 ? 'bg-amber-500/30 border-amber-400 text-yellow-200 font-bold' : 'bg-slate-900/80 border-slate-800 text-slate-400'}`}>LV.66-80: 4,000元宝</span>
+            <span className={`px-2 py-0.5 rounded border ${engine.character.level > 80 && engine.character.level <= 100 ? 'bg-amber-500/30 border-amber-400 text-yellow-200 font-bold' : 'bg-slate-900/80 border-slate-800 text-slate-400'}`}>LV.81-100: 10,000元宝</span>
+            <span className={`px-2 py-0.5 rounded border ${engine.character.level > 100 ? 'bg-amber-500/30 border-amber-400 text-yellow-200 font-bold' : 'bg-slate-900/80 border-slate-800 text-slate-400'}`}>LV.100+: 20,000+元宝</span>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {shopGoods.map((goods, idx) => (
             <div
               key={idx}
               className="bg-slate-950 p-4 rounded-xl border border-amber-900/40 flex items-center justify-between gap-3"
             >
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">{goods.item.icon}</span>
-                <div>
-                  <h4 className="font-bold text-amber-200 text-sm">{goods.label}</h4>
-                  <p className="text-[10px] text-slate-400 mt-0.5 max-w-[150px] truncate">{goods.item.description}</p>
-                  <p className="text-xs font-extrabold text-amber-400 mt-1">{goods.priceIngot} 元宝</p>
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-3xl shrink-0">{goods.item.icon}</span>
+                <div className="min-w-0">
+                  <h4 className="font-bold text-amber-200 text-sm truncate">{goods.label}</h4>
+                  {goods.tierSub ? (
+                    <p className="text-[10px] text-amber-300 font-medium">{goods.tierSub}</p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 mt-0.5 truncate">{goods.item.description}</p>
+                  )}
+                  <p className="text-xs font-extrabold text-amber-400 mt-1">{goods.priceIngot.toLocaleString()} 元宝</p>
                 </div>
               </div>
 
               <button
                 onClick={() => handleBuy(goods)}
-                className="px-3 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:brightness-110 text-white font-bold text-xs rounded-lg shadow-md whitespace-nowrap"
+                className="px-3 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:brightness-110 text-white font-bold text-xs rounded-lg shadow-md whitespace-nowrap shrink-0"
               >
                 购买
               </button>

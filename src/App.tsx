@@ -24,6 +24,8 @@ import { AutoSettingsModal } from './components/Modals/AutoSettingsModal';
 import { WeatherModal } from './components/Modals/WeatherModal';
 import { MountModal } from './components/Modals/MountModal';
 import { PortalModal } from './components/Modals/PortalModal';
+import { MailModal } from './components/Modals/MailModal';
+import { GMAdminModal } from './components/Modals/GMAdminModal';
 import { PortalPrompt } from './components/HUD/PortalPrompt';
 import { QuickEquipPrompt } from './components/HUD/QuickEquipPrompt';
 import { MonsterTargetBar } from './components/HUD/MonsterTargetBar';
@@ -233,6 +235,20 @@ export default function App() {
 
       {activeModal === 'portal' && (
         <PortalModal
+          engine={engine}
+          onClose={() => setActiveModal(null)}
+        />
+      )}
+
+      {activeModal === 'mail' && (
+        <MailModal
+          engine={engine}
+          onClose={() => setActiveModal(null)}
+        />
+      )}
+
+      {activeModal === 'gmAdmin' && (
+        <GMAdminModal
           engine={engine}
           onClose={() => setActiveModal(null)}
         />

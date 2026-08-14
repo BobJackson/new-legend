@@ -75,9 +75,12 @@ export const CharacterCreate: React.FC<CharacterCreateProps> = ({ onCreate }) =>
   const handleStartGame = () => {
     if (!name.trim()) return;
 
+    const charUid = `UID-${Math.floor(100000 + Math.random() * 900000)}`;
     const newChar: CharacterData = {
       ...previewCharData,
       id: `char_${Date.now()}`,
+      uid: charUid,
+      createdAt: new Date().toISOString(),
       name: name.trim()
     };
 

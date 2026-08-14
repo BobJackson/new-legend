@@ -409,12 +409,12 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
 
               <div className="flex justify-between py-1.5 border-b border-slate-800">
                 <span className="text-slate-400">生命上限 (HP)</span>
-                <span className="font-bold text-rose-400">{engine.stats.hp} / {engine.stats.maxHp}</span>
+                <span className="font-bold text-rose-400">{engine.stats.hp.toLocaleString()} / {engine.stats.maxHp.toLocaleString()}</span>
               </div>
 
               <div className="flex justify-between py-1.5 border-b border-slate-800">
                 <span className="text-slate-400">法力上限 (MP)</span>
-                <span className="font-bold text-sky-400">{engine.stats.mp} / {engine.stats.maxMp}</span>
+                <span className="font-bold text-sky-400">{engine.stats.mp.toLocaleString()} / {engine.stats.maxMp.toLocaleString()}</span>
               </div>
 
               <div className="flex justify-between py-1.5 border-b border-slate-800">

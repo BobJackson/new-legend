@@ -4,13 +4,15 @@ import {
   Monster, 
   DropItem, 
   ParticleEffect, 
-  VfxKind,
+  VfxKind, 
   PlayerStats, 
   EquipmentSlot, 
-  Item,
-  Pet,
-  Quest,
-  AchievementStats
+  Item, 
+  Pet, 
+  Quest, 
+  AchievementStats,
+  Mail,
+  MailAttachmentItem
 } from '../types/game';
 import { MAP_DATABASE } from '../data/maps';
 import { MONSTER_TEMPLATES } from '../data/monsters';
@@ -22,6 +24,7 @@ import { WEATHER_DATABASE, WeatherType } from '../data/weather';
 import { MOUNT_TIERS } from '../data/mounts';
 import { SKILL_TEMPLATES } from '../data/skills';
 import { soundFX } from '../utils/sound';
+import { fetchPlayerMails, markMailRead, markMailClaimed, deletePlayerMail } from '../utils/mailService';
 
 export class GameEngine {
   public character: CharacterData;
@@ -438,8 +441,16 @@ export class GameEngine {
   // Listeners
   private onStateChangeCallbacks: (() => void)[] = [];
 
+  public mails: Mail[] = [];
+
   constructor(characterData: CharacterData) {
     this.character = characterData;
+    if (!this.character.uid) {
+      this.character.uid = `UID-${Math.floor(100000 + Math.random() * 900000)}`;
+    }
+    if (!this.character.createdAt) {
+      this.character.createdAt = new Date().toISOString();
+    }
     this.initMount();
     this.initQuestData();
     this.initAutoSettings();
@@ -462,6 +473,7 @@ export class GameEngine {
     this.recalculateStats();
     this.spawnMonstersForMap(this.currentMapId);
     this.refreshSabakInfo();
+    this.refreshMails();
   }
 
   public syncClassSkills() {
@@ -3608,14 +3620,226 @@ export class GameEngine {
     return true;
   }
 
+  public getLevelUpPillPrice(level?: number): { price: number; tierName: string; reqLevelRange: string } {
+    const currentLvl = level !== undefined ? level : this.character.level;
+    if (currentLvl <= 20) {
+      return { price: 50, tierName: '初级直升', reqLevelRange: 'LV.1-20' };
+    } else if (currentLvl <= 35) {
+      return { price: 150, tierName: '中级直升', reqLevelRange: 'LV.21-35' };
+    } else if (currentLvl <= 50) {
+      return { price: 500, tierName: '高级直升', reqLevelRange: 'LV.36-50' };
+    } else if (currentLvl <= 65) {
+      return { price: 1500, tierName: '特级直升', reqLevelRange: 'LV.51-65' };
+    } else if (currentLvl <= 80) {
+      return { price: 4000, tierName: '大师直升', reqLevelRange: 'LV.66-80' };
+    } else if (currentLvl <= 100) {
+      return { price: 10000, tierName: '宗师直升', reqLevelRange: 'LV.81-100' };
+    } else {
+      const extra = Math.floor((currentLvl - 100) / 10) * 10000;
+      return { price: 20000 + extra, tierName: '巅峰直升', reqLevelRange: 'LV.100+' };
+    }
+  }
+
   public buyAndUseLevelUpPill(): boolean {
-    if (this.character.ingot < 10) {
-      this.addParticle(this.character.x, this.character.y, 'text_info', '元宝不足！需要 10 元宝！');
+    const tierInfo = this.getLevelUpPillPrice();
+    if (this.character.ingot < tierInfo.price) {
+      this.addParticle(this.character.x, this.character.y, 'text_info', `元宝不足！当前阶梯需要 ${tierInfo.price.toLocaleString()} 元宝！`);
       return false;
     }
-    this.character.ingot -= 10;
+    this.character.ingot -= tierInfo.price;
     this.useInstantLevelUpPill();
-    this.addParticle(this.character.x, this.character.y, 'text_gold', '【10元宝直升】消耗10元宝购买并使用了直升经验丹！');
+    this.addParticle(this.character.x, this.character.y, 'text_gold', `【${tierInfo.tierName}】消耗 ${tierInfo.price.toLocaleString()} 元宝购买并使用了直升经验丹！`);
     return true;
   }
+
+  // ==========================================
+  // 邮件系统核心管理逻辑 (Mail System Core)
+  // ==========================================
+
+  public async refreshMails(): Promise<Mail[]> {
+    try {
+      const list = await fetchPlayerMails(
+        this.character.id,
+        this.character.name,
+        this.character.uid
+      );
+      this.mails = list;
+      this.notify();
+      return list;
+    } catch (e) {
+      console.warn('refreshMails failed:', e);
+      return this.mails;
+    }
+  }
+
+  public hasUnreadMails(): boolean {
+    return this.mails.some(m => !m.isRead || (!m.isClaimed && this.hasAttachment(m)));
+  }
+
+  public getUnreadMailsCount(): number {
+    return this.mails.filter(m => !m.isRead || (!m.isClaimed && this.hasAttachment(m))).length;
+  }
+
+  public hasAttachment(mail: Mail): boolean {
+    if (!mail.attachment) return false;
+    const att = mail.attachment;
+    if (att.gold && att.gold > 0) return true;
+    if (att.ingot && att.ingot > 0) return true;
+    if (att.expPills && att.expPills > 0) return true;
+    if (att.items && att.items.length > 0) return true;
+    return false;
+  }
+
+  public async markMailRead(mailId: string): Promise<void> {
+    const target = this.mails.find(m => m.id === mailId);
+    if (target) {
+      target.isRead = true;
+      this.notify();
+      await markMailRead(this.character.id, mailId);
+    }
+  }
+
+  public async claimMail(mailId: string): Promise<{ success: boolean; message: string }> {
+    const mail = this.mails.find(m => m.id === mailId);
+    if (!mail) {
+      return { success: false, message: '邮件不存在！' };
+    }
+    if (mail.isClaimed) {
+      return { success: false, message: '该邮件附件已领取！' };
+    }
+    if (!this.hasAttachment(mail)) {
+      mail.isClaimed = true;
+      mail.isRead = true;
+      await markMailClaimed(this.character.id, mailId);
+      this.notify();
+      return { success: true, message: '邮件无附件，已确认查阅！' };
+    }
+
+    const att = mail.attachment!;
+    
+    // 检查背包空间需求
+    let requiredSlots = 0;
+    if (att.expPills && att.expPills > 0) {
+      requiredSlots += 1;
+    }
+    if (att.items && Array.isArray(att.items)) {
+      att.items.forEach(it => {
+        const itemTemplate = it.customItem || ITEM_DATABASE[it.itemId];
+        if (itemTemplate) {
+          // 堆叠物品检查
+          const stackable = itemTemplate.type === 'potion' || itemTemplate.type === 'material';
+          if (stackable) {
+            const existing = this.character.inventory.find(inv => inv && inv.id === itemTemplate.id);
+            if (!existing) requiredSlots += 1;
+          } else {
+            requiredSlots += it.count || 1;
+          }
+        }
+      });
+    }
+
+    const emptySlots = this.character.inventory.filter(slot => slot === null).length;
+    if (emptySlots < requiredSlots) {
+      this.addParticle(this.character.x, this.character.y, 'text_info', `背包空间不足！需要 ${requiredSlots} 格空位！`);
+      return { success: false, message: `背包空间不足！领取附件至少需要 ${requiredSlots} 个空闲背包栏位！` };
+    }
+
+    // 发放奖励
+    const gainedMessages: string[] = [];
+
+    if (att.gold && att.gold > 0) {
+      this.character.gold += att.gold;
+      gainedMessages.push(`金币 +${att.gold.toLocaleString()}`);
+    }
+
+    if (att.ingot && att.ingot > 0) {
+      this.character.ingot += att.ingot;
+      gainedMessages.push(`元宝 +${att.ingot.toLocaleString()}`);
+    }
+
+    if (att.expPills && att.expPills > 0) {
+      const pillTemplate = ITEM_DATABASE['pill_instant_levelup'];
+      if (pillTemplate) {
+        this.addItemToInventory({
+          ...pillTemplate,
+          count: att.expPills
+        });
+        gainedMessages.push(`直升经验丹 x${att.expPills}`);
+      }
+    }
+
+    if (att.items && Array.isArray(att.items)) {
+      att.items.forEach(it => {
+        const baseItem = it.customItem || ITEM_DATABASE[it.itemId];
+        if (baseItem) {
+          const itemToAdd: Item = {
+            ...baseItem,
+            count: it.count || 1
+          };
+          this.addItemToInventory(itemToAdd);
+          gainedMessages.push(`${baseItem.name} x${it.count || 1}`);
+        }
+      });
+    }
+
+    mail.isClaimed = true;
+    mail.isRead = true;
+    await markMailClaimed(this.character.id, mailId);
+
+    const summary = gainedMessages.join('、');
+    this.addParticle(this.character.x, this.character.y, 'text_gold', `【邮件附件领取】获得: ${summary}`);
+    soundFX.playLoot();
+    this.notify();
+
+    return { success: true, message: `领取成功！获得：${summary}` };
+  }
+
+  public async claimAllMails(): Promise<{ success: boolean; claimedCount: number; message: string }> {
+    const claimable = this.mails.filter(m => !m.isClaimed && this.hasAttachment(m));
+    if (claimable.length === 0) {
+      return { success: false, claimedCount: 0, message: '暂无可领取的邮件附件！' };
+    }
+
+    let successCount = 0;
+    const gainedAll: string[] = [];
+
+    for (const mail of claimable) {
+      const res = await this.claimMail(mail.id);
+      if (res.success) {
+        successCount++;
+        gainedAll.push(res.message);
+      } else {
+        // 如果背包满了中断
+        break;
+      }
+    }
+
+    this.notify();
+    if (successCount === 0) {
+      return { success: false, claimedCount: 0, message: '背包空间不足，未能成功领取邮件！' };
+    }
+
+    return {
+      success: true,
+      claimedCount: successCount,
+      message: `已一键领取 ${successCount} 封邮件奖励！`
+    };
+  }
+
+  public async deleteMail(mailId: string): Promise<boolean> {
+    this.mails = this.mails.filter(m => m.id !== mailId);
+    await deletePlayerMail(this.character.id, mailId);
+    this.notify();
+    return true;
+  }
+
+  public async deleteReadAndClaimedMails(): Promise<number> {
+    const toDelete = this.mails.filter(m => m.isRead && (m.isClaimed || !this.hasAttachment(m)));
+    for (const m of toDelete) {
+      await this.deleteMail(m.id);
+    }
+    this.notify();
+    return toDelete.length;
+  }
 }
+

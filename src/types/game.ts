@@ -343,9 +343,55 @@ export interface CombatDisplaySettings {
   showCenterDamage: boolean; // 默认关闭中间伤害特效
 }
 
+export interface MailAttachmentItem {
+  itemId: string;
+  count: number;
+  customItem?: Item;
+}
+
+export interface MailAttachment {
+  gold?: number;
+  ingot?: number;
+  expPills?: number; // 直升经验丹数量
+  items?: MailAttachmentItem[];
+}
+
+export type MailType = 'system' | 'event' | 'compensation' | 'gm' | 'guild';
+
+export interface Mail {
+  id: string;
+  sender: string;
+  title: string;
+  content: string;
+  type: MailType;
+  sentAt: string; // ISO date string
+  expiresAt?: string;
+  targetType: 'all' | 'player';
+  targetPlayerId?: string;
+  targetPlayerName?: string;
+  attachment?: MailAttachment;
+  isRead: boolean;
+  isClaimed: boolean;
+}
+
+export interface MailSendLog {
+  id: string;
+  sender: string;
+  title: string;
+  target: string; // "全服玩家" or "角色名 (UID)"
+  targetType: 'all' | 'player';
+  targetPlayerId?: string;
+  targetPlayerName?: string;
+  sentAt: string;
+  attachmentSummary: string;
+  status: 'success' | 'revoked';
+}
+
 export interface CharacterData {
   id: string;
+  uid?: string; // 唯一用户编号 e.g. UID-883921
   name: string;
+  createdAt?: string;
   gender: GenderType;
   profession: ProfessionType;
   level: number;
@@ -377,6 +423,7 @@ export interface CharacterData {
   claimedAchievementIds?: string[];
   equippedTitleId?: string | null;
   mount?: MountData;
+  mails?: Mail[];
 }
 
 export interface GuildInfo {
